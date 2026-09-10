@@ -1,0 +1,187 @@
+export const ROLES = [
+  "owner",
+  "admin",
+  "manager",
+  "cashier",
+  "inventory_staff",
+  "accountant",
+  "report_viewer",
+] as const;
+
+export type Role = (typeof ROLES)[number];
+
+export const ROLE_LABELS: Record<Role, string> = {
+  owner: "Owner",
+  admin: "Admin",
+  manager: "Manager",
+  cashier: "Cashier",
+  inventory_staff: "Inventory Staff",
+  accountant: "Accountant",
+  report_viewer: "Report Viewer",
+};
+
+/**
+ * Single source of truth for permission keys, seeded verbatim into the
+ * `permissions` / `role_permissions` tables (see db/seed.ts) so the DB and
+ * runtime checks never drift. New phases add keys here, not ad-hoc strings.
+ */
+export const PERMISSIONS = {
+  BUSINESS_MANAGE: "business.manage",
+  MEMBERS_VIEW: "members.view",
+  MEMBERS_INVITE: "members.invite",
+  MEMBERS_MANAGE: "members.manage",
+  COMPANY_MANAGE: "company.manage",
+  BRANCH_MANAGE: "branch.manage",
+  SETTINGS_VIEW: "settings.view",
+  MASTERS_VIEW: "masters.view",
+  MASTERS_MANAGE: "masters.manage",
+  PRODUCTS_VIEW: "products.view",
+  PRODUCTS_MANAGE: "products.manage",
+  CUSTOMERS_VIEW: "customers.view",
+  CUSTOMERS_MANAGE: "customers.manage",
+  SUPPLIERS_VIEW: "suppliers.view",
+  SUPPLIERS_MANAGE: "suppliers.manage",
+  ACCOUNTS_VIEW: "accounts.view",
+  ACCOUNTS_MANAGE: "accounts.manage",
+  BILLING_VIEW: "billing.view",
+  BILLING_MANAGE: "billing.manage",
+  PURCHASE_VIEW: "purchase.view",
+  PURCHASE_MANAGE: "purchase.manage",
+  INVENTORY_VIEW: "inventory.view",
+  INVENTORY_MANAGE: "inventory.manage",
+  REPORTS_VIEW: "reports.view",
+  LOYALTY_MANAGE: "loyalty.manage",
+  COMMUNICATIONS_SEND: "communications.send",
+} as const;
+
+export type PermissionKey = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
+
+export const PERMISSION_DESCRIPTIONS: Record<PermissionKey, string> = {
+  [PERMISSIONS.BUSINESS_MANAGE]: "Rename or delete the business, transfer ownership",
+  [PERMISSIONS.MEMBERS_VIEW]: "View the list of team members and their roles",
+  [PERMISSIONS.MEMBERS_INVITE]: "Invite new team members",
+  [PERMISSIONS.MEMBERS_MANAGE]: "Change roles or remove team members",
+  [PERMISSIONS.COMPANY_MANAGE]: "Create or edit companies",
+  [PERMISSIONS.BRANCH_MANAGE]: "Create or edit branches, warehouses, counters",
+  [PERMISSIONS.SETTINGS_VIEW]: "View business settings",
+  [PERMISSIONS.MASTERS_VIEW]: "View categories, brands, HSN, UOM and other master data",
+  [PERMISSIONS.MASTERS_MANAGE]: "Create or edit master data",
+  [PERMISSIONS.PRODUCTS_VIEW]: "View the product catalog",
+  [PERMISSIONS.PRODUCTS_MANAGE]: "Create or edit products",
+  [PERMISSIONS.CUSTOMERS_VIEW]: "View customers",
+  [PERMISSIONS.CUSTOMERS_MANAGE]: "Create or edit customers",
+  [PERMISSIONS.SUPPLIERS_VIEW]: "View suppliers",
+  [PERMISSIONS.SUPPLIERS_MANAGE]: "Create or edit suppliers",
+  [PERMISSIONS.ACCOUNTS_VIEW]: "View the chart of accounts",
+  [PERMISSIONS.ACCOUNTS_MANAGE]: "Create or edit accounts",
+  [PERMISSIONS.BILLING_VIEW]: "View sales, quotations and bills",
+  [PERMISSIONS.BILLING_MANAGE]: "Create and edit sales, quotations, orders and challans",
+  [PERMISSIONS.PURCHASE_VIEW]: "View purchase orders, purchases and returns",
+  [PERMISSIONS.PURCHASE_MANAGE]: "Create and edit purchase orders, purchases and returns",
+  [PERMISSIONS.INVENTORY_VIEW]: "View stock levels, movements and reports",
+  [PERMISSIONS.INVENTORY_MANAGE]: "Record stock transfers and adjustments",
+  [PERMISSIONS.REPORTS_VIEW]: "View sales, purchase, stock and GST reports",
+  [PERMISSIONS.LOYALTY_MANAGE]: "Configure the loyalty programme and adjust points",
+  [PERMISSIONS.COMMUNICATIONS_SEND]: "Send SMS and email to customers and suppliers",
+};
+
+const ALL_PERMISSIONS = Object.values(PERMISSIONS);
+
+export const ROLE_PERMISSIONS: Record<Role, PermissionKey[]> = {
+  owner: ALL_PERMISSIONS,
+  admin: [
+    PERMISSIONS.MEMBERS_VIEW,
+    PERMISSIONS.MEMBERS_INVITE,
+    PERMISSIONS.MEMBERS_MANAGE,
+    PERMISSIONS.COMPANY_MANAGE,
+    PERMISSIONS.BRANCH_MANAGE,
+    PERMISSIONS.SETTINGS_VIEW,
+    PERMISSIONS.MASTERS_VIEW,
+    PERMISSIONS.MASTERS_MANAGE,
+    PERMISSIONS.PRODUCTS_VIEW,
+    PERMISSIONS.PRODUCTS_MANAGE,
+    PERMISSIONS.CUSTOMERS_VIEW,
+    PERMISSIONS.CUSTOMERS_MANAGE,
+    PERMISSIONS.SUPPLIERS_VIEW,
+    PERMISSIONS.SUPPLIERS_MANAGE,
+    PERMISSIONS.ACCOUNTS_VIEW,
+    PERMISSIONS.ACCOUNTS_MANAGE,
+    PERMISSIONS.BILLING_VIEW,
+    PERMISSIONS.BILLING_MANAGE,
+    PERMISSIONS.PURCHASE_VIEW,
+    PERMISSIONS.PURCHASE_MANAGE,
+    PERMISSIONS.INVENTORY_VIEW,
+    PERMISSIONS.INVENTORY_MANAGE,
+    PERMISSIONS.REPORTS_VIEW,
+    PERMISSIONS.LOYALTY_MANAGE,
+    PERMISSIONS.COMMUNICATIONS_SEND,
+  ],
+  manager: [
+    PERMISSIONS.MEMBERS_VIEW,
+    PERMISSIONS.COMPANY_MANAGE,
+    PERMISSIONS.BRANCH_MANAGE,
+    PERMISSIONS.SETTINGS_VIEW,
+    PERMISSIONS.MASTERS_VIEW,
+    PERMISSIONS.MASTERS_MANAGE,
+    PERMISSIONS.PRODUCTS_VIEW,
+    PERMISSIONS.PRODUCTS_MANAGE,
+    PERMISSIONS.CUSTOMERS_VIEW,
+    PERMISSIONS.CUSTOMERS_MANAGE,
+    PERMISSIONS.SUPPLIERS_VIEW,
+    PERMISSIONS.SUPPLIERS_MANAGE,
+    PERMISSIONS.BILLING_VIEW,
+    PERMISSIONS.BILLING_MANAGE,
+    PERMISSIONS.PURCHASE_VIEW,
+    PERMISSIONS.PURCHASE_MANAGE,
+    PERMISSIONS.INVENTORY_VIEW,
+    PERMISSIONS.INVENTORY_MANAGE,
+    PERMISSIONS.REPORTS_VIEW,
+    PERMISSIONS.LOYALTY_MANAGE,
+    PERMISSIONS.COMMUNICATIONS_SEND,
+  ],
+  accountant: [
+    PERMISSIONS.MEMBERS_VIEW,
+    PERMISSIONS.SETTINGS_VIEW,
+    PERMISSIONS.MASTERS_VIEW,
+    PERMISSIONS.PRODUCTS_VIEW,
+    PERMISSIONS.CUSTOMERS_VIEW,
+    PERMISSIONS.SUPPLIERS_VIEW,
+    PERMISSIONS.ACCOUNTS_VIEW,
+    PERMISSIONS.ACCOUNTS_MANAGE,
+    PERMISSIONS.BILLING_VIEW,
+    PERMISSIONS.PURCHASE_VIEW,
+    PERMISSIONS.INVENTORY_VIEW,
+    PERMISSIONS.REPORTS_VIEW,
+  ],
+  inventory_staff: [
+    PERMISSIONS.MEMBERS_VIEW,
+    PERMISSIONS.MASTERS_VIEW,
+    PERMISSIONS.MASTERS_MANAGE,
+    PERMISSIONS.PRODUCTS_VIEW,
+    PERMISSIONS.PRODUCTS_MANAGE,
+    PERMISSIONS.SUPPLIERS_VIEW,
+    PERMISSIONS.PURCHASE_VIEW,
+    PERMISSIONS.PURCHASE_MANAGE,
+    PERMISSIONS.INVENTORY_VIEW,
+    PERMISSIONS.INVENTORY_MANAGE,
+  ],
+  cashier: [
+    PERMISSIONS.PRODUCTS_VIEW,
+    PERMISSIONS.CUSTOMERS_VIEW,
+    PERMISSIONS.BILLING_VIEW,
+    PERMISSIONS.BILLING_MANAGE,
+    PERMISSIONS.COMMUNICATIONS_SEND,
+  ],
+  report_viewer: [
+    PERMISSIONS.SETTINGS_VIEW,
+    PERMISSIONS.BILLING_VIEW,
+    PERMISSIONS.PURCHASE_VIEW,
+    PERMISSIONS.INVENTORY_VIEW,
+    PERMISSIONS.REPORTS_VIEW,
+  ],
+};
+
+/** Always call this server-side. Client-side hiding of UI is cosmetic only. */
+export function can(role: Role, permission: PermissionKey): boolean {
+  return ROLE_PERMISSIONS[role]?.includes(permission) ?? false;
+}

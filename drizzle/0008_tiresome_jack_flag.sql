@@ -1,0 +1,2 @@
+ALTER TABLE "loyalty_transactions" ADD COLUMN "reverses_sale_id" text;--> statement-breakpoint
+ALTER TABLE "loyalty_transactions" ADD CONSTRAINT "loyalty_transactions_reverses_sale_id_sales_id_fk" FOREIGN KEY ("reverses_sale_id") REFERENCES "public"."sales"("id") ON DELETE set null ON UPDATE no action;
