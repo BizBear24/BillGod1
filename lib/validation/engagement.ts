@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { optionalDateText, optionalNumber, optionalText } from "./common";
 
 export const loyaltySettingsSchema = z.object({
   enabled: z.boolean().optional(),
@@ -27,16 +28,16 @@ export const couponSchema = z
       .max(24, "Keep the code under 24 characters")
       .regex(/^[A-Za-z0-9_-]+$/, "Use letters, numbers, hyphens and underscores only")
       .transform((v) => v.toUpperCase()),
-    description: z.string().trim().optional(),
+    description: optionalText,
     type: z.enum(COUPON_TYPES).default("percent"),
     value: z.coerce.number().min(0, "Enter a value"),
-    maxDiscountAmount: z.coerce.number().min(0).optional(),
-    minBillAmount: z.coerce.number().min(0).optional(),
-    startsAt: z.string().trim().optional(),
-    endsAt: z.string().trim().optional(),
-    maxRedemptions: z.coerce.number().int().min(0).optional(),
-    perCustomerLimit: z.coerce.number().int().min(0).optional(),
-    isActive: z.boolean().optional(),
+    maxDiscountAmount: optionalNumber(z.coerce.number().min(0)),
+    minBillAmount: optionalNumber(z.coerce.number().min(0)),
+    startsAt: optionalDateText,
+    endsAt: optionalDateText,
+    maxRedemptions: optionalNumber(z.coerce.number().int().min(0)),
+    perCustomerLimit: optionalNumber(z.coerce.number().int().min(0)),
+    isActive: z.coerce.boolean().optional(),
   })
   .refine((data) => data.type !== "percent" || data.value <= 100, {
     message: "A percentage coupon cannot be more than 100%",
@@ -58,7 +59,7 @@ export type LoyaltyTierInput = z.infer<typeof loyaltyTierSchema>;
 export const loyaltyAdjustmentSchema = z.object({
   customerId: z.string().min(1, "Select a customer"),
   points: z.coerce.number().int().refine((n) => n !== 0, "Enter a non-zero number of points"),
-  note: z.string().trim().optional(),
+  note: optionalText,
 });
 export type LoyaltyAdjustmentInput = z.infer<typeof loyaltyAdjustmentSchema>;
 
@@ -83,7 +84,7 @@ export const messageTemplateSchema = z.object({
   channel: z.enum(MESSAGE_CHANNELS),
   eventKey: z.enum(MESSAGE_EVENTS),
   name: z.string().trim().min(1, "Enter a template name"),
-  subject: z.string().trim().optional(),
+  subject: optionalText,
   body: z.string().trim().min(1, "Enter the message body"),
 });
 export type MessageTemplateInput = z.infer<typeof messageTemplateSchema>;
@@ -93,7 +94,7 @@ export const sendMessageSchema = z.object({
   eventKey: z.enum(MESSAGE_EVENTS),
   customerId: z.string().optional(),
   recipient: z.string().trim().min(1, "Enter a recipient"),
-  subject: z.string().trim().optional(),
+  subject: optionalText,
   body: z.string().trim().min(1, "Enter a message"),
 });
 export type SendMessageInput = z.infer<typeof sendMessageSchema>;

@@ -19,6 +19,9 @@ import { productSchema } from "@/lib/validation/products";
 import { customerSchema, supplierSchema } from "@/lib/validation/parties";
 import { accountSchema } from "@/lib/validation/accounting";
 import { loyaltyTierSchema, couponSchema } from "@/lib/validation/engagement";
+import { NONE } from "@/lib/validation/common";
+import { createMasterValue } from "@/app/actions/masters";
+import { INLINE_MASTER_LABELS, type InlineMasterKind } from "@/lib/masters/inline";
 
 /**
  * Icons and Zod schemas are functions/class instances, which the RSC boundary
@@ -55,6 +58,11 @@ export type CrudField = {
   options?: { value: string; label: string }[];
   /** Shown under a toggle to explain what turning it on actually does. */
   hint?: string;
+  /**
+   * Lets this dropdown create the master value it is missing, without leaving
+   * the form. Set to the kind of master the field points at.
+   */
+  createKind?: InlineMasterKind;
 };
 
 /**
@@ -211,7 +219,7 @@ export function EntityCrudManager<T extends Record<string, unknown> & { id: stri
             itemLabel={itemLabel ?? title.replace(/s$/, "")}
             fields={fields}
             schema={schema}
-            defaultValues={editing ? { ...defaultValues, ...editing } : defaultValues}
+            defaultValues={editing ? formValuesFor(fields, { ...defaultValues, ...editing }) : defaultValues}
             editingId={editing?.id ?? null}
             createAction={createAction}
             updateAction={updateAction}
@@ -221,6 +229,24 @@ export function EntityCrudManager<T extends Record<string, unknown> & { id: stri
       </Dialog>
     </Card>
   );
+}
+
+/**
+ * Turns a database row into values a form can actually hold.
+ *
+ * A nullable column reads back as `null`, which a text input renders as the
+ * string "null", a Select cannot match to any option, and a checkbox treats as
+ * indeterminate — and which the schema then rejects on save. Every field is
+ * mapped to the empty value its own control understands instead.
+ */
+function formValuesFor(fields: CrudField[], row: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...row };
+  for (const field of fields) {
+    const value = row[field.name];
+    if (value !== null && value !== undefined) continue;
+    out[field.name] = field.type === "select" ? NONE : field.type === "toggle" ? false : "";
+  }
+  return out;
 }
 
 function renderCell<T extends Record<string, unknown>>(item: T, column: CrudColumn<T>): React.ReactNode {
@@ -299,7 +325,13 @@ function EntityForm({
                 <FormItem className={f.type === "toggle" ? "flex flex-row-reverse items-center justify-end gap-2 space-y-0" : undefined}>
                   <FormLabel className={f.type === "toggle" ? "font-normal" : undefined}>{f.label}</FormLabel>
                   <FormControl>
-                    {f.type === "toggle" ? (
+                    {f.type === "select" && f.createKind ? (
+                      <CreatableSelect
+                        field={f}
+                        value={(field.value as string) ?? NONE}
+                        onChange={field.onChange}
+                      />
+                    ) : f.type === "toggle" ? (
                       <input
                         type="checkbox"
                         checked={!!field.value}
@@ -342,5 +374,131 @@ function EntityForm({
         </form>
       </Form>
     </>
+  );
+}
+
+
+/**
+ * A dropdown that can add the value it is missing.
+ *
+ * Without this, setting a colour on a new product meant abandoning the form,
+ * creating the colour under Masters, and starting again — which is why the
+ * field felt broken even though the control worked. The new value is created
+ * server-side (same validation as the Masters screen), selected immediately,
+ * and kept in a local list so it shows without waiting for a page refresh.
+ */
+function CreatableSelect({
+  field,
+  value,
+  onChange,
+}: {
+  field: CrudField;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const router = useRouter();
+  const [adding, setAdding] = React.useState(false);
+  const [draft, setDraft] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  /** Values created in this dialog, which the server props do not know about yet. */
+  const [added, setAdded] = React.useState<{ value: string; label: string }[]>([]);
+
+  const options = React.useMemo(() => [...(field.options ?? []), ...added], [field.options, added]);
+  const noun = field.createKind ? INLINE_MASTER_LABELS[field.createKind] : "value";
+
+  async function create() {
+    if (!field.createKind) return;
+    const text = draft.trim();
+    if (!text) return;
+    setBusy(true);
+    const result = await createMasterValue(field.createKind, text);
+    setBusy(false);
+    if (!result.ok) {
+      toast.error(result.error);
+      return;
+    }
+    if (result.id && result.label) {
+      setAdded((prev) => [...prev, { value: result.id!, label: result.label! }]);
+      onChange(result.id);
+    }
+    toast.success(`Added ${noun} "${result.label ?? text}"`);
+    setDraft("");
+    setAdding(false);
+    // Re-read the server props so the new value survives closing the dialog.
+    router.refresh();
+  }
+
+  if (adding) {
+    return (
+      <div className="flex items-center gap-2">
+        <Input
+          autoFocus
+          value={draft}
+          disabled={busy}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              void create();
+            }
+            if (e.key === "Escape") {
+              e.preventDefault();
+              setAdding(false);
+              setDraft("");
+            }
+          }}
+          placeholder={
+            field.createKind === "taxRate"
+              ? "Rate %, e.g. 18"
+              : field.createKind === "unit"
+                ? "e.g. Piece  (or Piece / PCS)"
+                : `New ${noun}`
+          }
+        />
+        <Button type="button" size="sm" disabled={busy || draft.trim().length === 0} onClick={() => void create()}>
+          {busy ? "Adding…" : "Add"}
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          disabled={busy}
+          onClick={() => {
+            setAdding(false);
+            setDraft("");
+          }}
+        >
+          Cancel
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <Select items={options} value={value} onValueChange={(v) => onChange(v ?? NONE)}>
+        <SelectTrigger className="w-full">
+          <SelectValue placeholder={field.placeholder ?? "Select"} />
+        </SelectTrigger>
+        <SelectContent>
+          {options.map((o) => (
+            <SelectItem key={o.value} value={o.value}>
+              {o.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <Button
+        type="button"
+        size="sm"
+        variant="secondary"
+        className="shrink-0"
+        aria-label={`Add a new ${noun}`}
+        onClick={() => setAdding(true)}
+      >
+        <Plus className="h-3.5 w-3.5" />
+        New
+      </Button>
+    </div>
   );
 }

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { optionalNumber } from "./common";
 
 export const ACCOUNT_GROUPS = ["asset", "liability", "income", "expense", "equity"] as const;
 export const ACCOUNT_GROUP_LABELS: Record<(typeof ACCOUNT_GROUPS)[number], string> = {
@@ -12,7 +13,7 @@ export const ACCOUNT_GROUP_LABELS: Record<(typeof ACCOUNT_GROUPS)[number], strin
 export const accountSchema = z.object({
   name: z.string().trim().min(1, "Enter an account name"),
   group: z.enum(ACCOUNT_GROUPS),
-  openingBalance: z.coerce.number().optional(),
+  openingBalance: optionalNumber(z.coerce.number()),
 });
 export type AccountInput = z.infer<typeof accountSchema>;
 

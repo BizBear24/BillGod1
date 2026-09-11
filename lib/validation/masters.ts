@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { optionalId, optionalNumber, optionalText } from "./common";
 
 export const nameOnlySchema = z.object({
   name: z.string().trim().min(1, "Enter a name"),
@@ -24,7 +25,7 @@ export type UnitInput = z.infer<typeof unitSchema>;
 
 export const colorSchema = z.object({
   name: z.string().trim().min(1, "Enter a name"),
-  hexCode: z.string().trim().optional(),
+  hexCode: optionalText,
 });
 export type ColorInput = z.infer<typeof colorSchema>;
 
@@ -36,31 +37,28 @@ export type RackInput = z.infer<typeof rackSchema>;
 
 export const salespersonSchema = z.object({
   name: z.string().trim().min(1, "Enter a name"),
-  phone: z.string().trim().optional(),
-  email: z.string().trim().optional(),
+  phone: optionalText,
+  email: optionalText,
 });
 export type SalespersonInput = z.infer<typeof salespersonSchema>;
 
 export const doctorSchema = z.object({
   name: z.string().trim().min(1, "Enter a name"),
-  phone: z.string().trim().optional(),
-  clinicName: z.string().trim().optional(),
+  phone: optionalText,
+  clinicName: optionalText,
 });
 export type DoctorInput = z.infer<typeof doctorSchema>;
 
 export const taxRateSchema = z.object({
   name: z.string().trim().min(1, "Enter a name"),
   ratePercent: z.coerce.number().min(0).max(100),
-  cessPercent: z.coerce.number().min(0).max(100).optional(),
+  cessPercent: optionalNumber(z.coerce.number().min(0).max(100)),
 });
 export type TaxRateInput = z.infer<typeof taxRateSchema>;
 
 export const hsnCodeSchema = z.object({
   code: z.string().trim().min(1, "Enter an HSN/SAC code"),
-  description: z.string().trim().optional(),
-  taxRateId: z
-    .string()
-    .optional()
-    .transform((v) => (v && v !== "none" ? v : undefined)),
+  description: optionalText,
+  taxRateId: optionalId,
 });
 export type HsnCodeInput = z.infer<typeof hsnCodeSchema>;

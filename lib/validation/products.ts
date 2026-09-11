@@ -1,14 +1,10 @@
 import { z } from "zod";
-
-const optionalId = z
-  .string()
-  .optional()
-  .transform((v) => (v && v !== "none" ? v : undefined));
+import { optionalId, optionalNumber, optionalText } from "./common";
 
 export const productSchema = z.object({
   itemCode: z.string().trim().min(1, "Enter an item code"),
   name: z.string().trim().min(1, "Enter a product name"),
-  description: z.string().trim().optional(),
+  description: optionalText,
 
   categoryId: optionalId,
   sectionId: optionalId,
@@ -20,18 +16,18 @@ export const productSchema = z.object({
   hsnId: optionalId,
   taxRateId: optionalId,
 
-  barcode: z.string().trim().optional(),
-  purchasePrice: z.coerce.number().min(0).optional(),
-  sellingPrice: z.coerce.number().min(0).optional(),
-  mrp: z.coerce.number().min(0).optional(),
-  wholesalePrice: z.coerce.number().min(0).optional(),
+  barcode: optionalText,
+  purchasePrice: optionalNumber(z.coerce.number().min(0)),
+  sellingPrice: optionalNumber(z.coerce.number().min(0)),
+  mrp: optionalNumber(z.coerce.number().min(0)),
+  wholesalePrice: optionalNumber(z.coerce.number().min(0)),
 
-  openingStock: z.coerce.number().optional(),
-  minStock: z.coerce.number().optional(),
-  reorderLevel: z.coerce.number().optional(),
+  openingStock: optionalNumber(z.coerce.number()),
+  minStock: optionalNumber(z.coerce.number()),
+  reorderLevel: optionalNumber(z.coerce.number()),
 
-  trackBatch: z.boolean().optional(),
-  trackExpiry: z.boolean().optional(),
-  trackSerial: z.boolean().optional(),
+  trackBatch: z.coerce.boolean().optional(),
+  trackExpiry: z.coerce.boolean().optional(),
+  trackSerial: z.coerce.boolean().optional(),
 });
 export type ProductInput = z.infer<typeof productSchema>;

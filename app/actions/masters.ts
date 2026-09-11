@@ -20,6 +20,7 @@ import { requireSessionUser, getActiveMembership } from "@/lib/auth/session";
 import { can, PERMISSIONS } from "@/lib/auth/permissions";
 import { logAudit } from "@/lib/audit";
 import { listWarehousesForBusiness } from "./org";
+import { INLINE_MASTER_LABELS, type InlineMasterKind } from "@/lib/masters/inline";
 import {
   categorySchema,
   sectionSchema,
@@ -503,4 +504,117 @@ export async function deleteHsnCode(id: string): Promise<ActionResult> {
   await db.delete(hsnCodes).where(and(eq(hsnCodes.id, id), eq(hsnCodes.businessId, gate.membership.businessId)));
   await logAudit({ businessId: gate.membership.businessId, userId: gate.sessionUser.userId, action: "hsn_code.deleted", entityType: "hsn_code", entityId: id });
   return { ok: true };
+}
+
+/* ------------------------------------------------- Inline master creation */
+
+/**
+ * Creates one master value from a single typed string and returns the row the
+ * caller should now select.
+ *
+ * Shaping the payload happens here rather than in the browser so the same
+ * validation the Masters screens use still applies — the client only ever
+ * sends the text someone typed.
+ */
+export async function createMasterValue(
+  kind: InlineMasterKind,
+  value: string
+): Promise<ActionResult & { id?: string; label?: string }> {
+  const gate = await requireManage();
+  if (!gate.ok) return gate;
+
+  const text = value.trim();
+  if (!text) return { ok: false, error: "Enter a name first." };
+
+  const businessId = gate.membership.businessId;
+  const db = await getDb();
+
+  try {
+    switch (kind) {
+      case "category": {
+        const parsed = categorySchema.safeParse({ name: text });
+        if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
+        const [row] = await db.insert(categories).values({ businessId, name: parsed.data.name }).returning();
+        return { ok: true, id: row.id, label: row.name };
+      }
+      case "section": {
+        const parsed = sectionSchema.safeParse({ name: text });
+        if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
+        const [row] = await db.insert(sections).values({ businessId, name: parsed.data.name }).returning();
+        return { ok: true, id: row.id, label: row.name };
+      }
+      case "brand": {
+        const parsed = brandSchema.safeParse({ name: text });
+        if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
+        const [row] = await db.insert(brands).values({ businessId, name: parsed.data.name }).returning();
+        return { ok: true, id: row.id, label: row.name };
+      }
+      case "size": {
+        const parsed = sizeSchema.safeParse({ name: text });
+        if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
+        const [row] = await db.insert(sizes).values({ businessId, name: parsed.data.name }).returning();
+        return { ok: true, id: row.id, label: row.name };
+      }
+      case "color": {
+        // "Red" or "Red #FF0000" — the hex is optional and picked out if given.
+        const hexMatch = text.match(/#[0-9a-fA-F]{6}\b/);
+        const name = text.replace(/#[0-9a-fA-F]{6}\b/, "").trim() || text;
+        const parsed = colorSchema.safeParse({ name, hexCode: hexMatch?.[0] });
+        if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
+        const [row] = await db
+          .insert(colors)
+          .values({ businessId, name: parsed.data.name, hexCode: parsed.data.hexCode || null })
+          .returning();
+        return { ok: true, id: row.id, label: row.name };
+      }
+      case "unit": {
+        // A short code is required but rarely worth typing: "Piece" -> "PIE".
+        const [namePart, codePart] = text.split(/\s*[/|,]\s*/);
+        const name = namePart.trim();
+        const shortCode = (codePart ?? name.slice(0, 3)).trim().toUpperCase();
+        const parsed = unitSchema.safeParse({ name, shortCode });
+        if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
+        const [row] = await db
+          .insert(units)
+          .values({ businessId, name: parsed.data.name, shortCode: parsed.data.shortCode })
+          .returning();
+        return { ok: true, id: row.id, label: `${row.name} (${row.shortCode})` };
+      }
+      case "hsnCode": {
+        const parsed = hsnCodeSchema.safeParse({ code: text });
+        if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
+        const [row] = await db.insert(hsnCodes).values({ businessId, code: parsed.data.code }).returning();
+        return { ok: true, id: row.id, label: row.code };
+      }
+      case "taxRate": {
+        // "18" or "18%" is all a shop should have to type for GST 18%.
+        const percent = parseFloat(text.replace("%", "").trim());
+        if (!Number.isFinite(percent)) {
+          return { ok: false, error: 'Enter the rate as a number, for example "18".' };
+        }
+        const parsed = taxRateSchema.safeParse({ name: `GST ${percent}%`, ratePercent: percent });
+        if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
+        const [row] = await db
+          .insert(taxRates)
+          .values({ businessId, name: parsed.data.name, ratePercent: String(parsed.data.ratePercent) })
+          .returning();
+        return { ok: true, id: row.id, label: `${row.name} (${parseFloat(row.ratePercent)}%)` };
+      }
+      default:
+        return { ok: false, error: "That cannot be created here." };
+    }
+  } catch (err) {
+    if (err instanceof Error && err.message.includes("unique")) {
+      return { ok: false, error: `A ${INLINE_MASTER_LABELS[kind]} called "${text}" already exists — pick it from the list.` };
+    }
+    throw err;
+  } finally {
+    await logAudit({
+      businessId,
+      userId: gate.sessionUser.userId,
+      action: "master.created_inline",
+      entityType: kind,
+      after: { value: text },
+    });
+  }
 }
