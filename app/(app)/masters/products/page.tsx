@@ -29,7 +29,7 @@ export default async function ProductsPage() {
     { name: "description", label: "Description", type: "text" },
     { name: "categoryId", label: "Category", type: "select", options: categoryOptions, createKind: "category" },
     { name: "sectionId", label: "Section", type: "select", options: sectionOptions, createKind: "section" },
-    { name: "subsectionId", label: "Subsection", type: "select", options: subsectionOptions },
+    { name: "subsectionId", label: "Subsection", type: "select", options: subsectionOptions, createKind: "subsection", dependsOn: "sectionId" },
     { name: "brandId", label: "Brand", type: "select", options: brandOptions, createKind: "brand" },
     { name: "unitId", label: "Unit", type: "select", options: unitOptions, createKind: "unit" },
     { name: "sizeId", label: "Size", type: "select", options: sizeOptions, createKind: "size" },

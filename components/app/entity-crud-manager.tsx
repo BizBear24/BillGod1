@@ -13,6 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { useFormContext } from "react-hook-form";
 import { Card, CardContent } from "@/components/ui/card";
 import { categorySchema, brandSchema, sizeSchema, unitSchema, colorSchema, rackSchema, salespersonSchema, doctorSchema, taxRateSchema, hsnCodeSchema } from "@/lib/validation/masters";
 import { productSchema } from "@/lib/validation/products";
@@ -63,6 +64,12 @@ export type CrudField = {
    * the form. Set to the kind of master the field points at.
    */
   createKind?: InlineMasterKind;
+  /**
+   * Name of a sibling field this one's inline "New" needs a value from —
+   * a new subsection needs a section, for instance. "New" stays disabled
+   * with a hint until that sibling has something other than "none" picked.
+   */
+  dependsOn?: string;
 };
 
 /**
@@ -397,21 +404,37 @@ function CreatableSelect({
   onChange: (value: string) => void;
 }) {
   const router = useRouter();
+  const form = useFormContext();
   const [adding, setAdding] = React.useState(false);
   const [draft, setDraft] = React.useState("");
   const [busy, setBusy] = React.useState(false);
   /** Values created in this dialog, which the server props do not know about yet. */
   const [added, setAdded] = React.useState<{ value: string; label: string }[]>([]);
 
-  const options = React.useMemo(() => [...(field.options ?? []), ...added], [field.options, added]);
+  // Re-render when the dependency changes, even though this field's own value
+  // hasn't — that's what lets picking a Section turn on Subsection's "New".
+  const dependsOnValue = field.dependsOn ? (form.watch(field.dependsOn) as string | undefined) : undefined;
+  const hasDependency = !field.dependsOn || (!!dependsOnValue && dependsOnValue !== NONE);
+
+  // field.options and added can legitimately overlap: after create() calls
+  // router.refresh(), the server re-sends field.options including the value
+  // just created, while `added` (local state) still holds it too. Deduping by
+  // value — not just concatenating — is what stops it showing twice.
+  const options = React.useMemo(() => {
+    const merged = [...(field.options ?? []), ...added];
+    const seen = new Set<string>();
+    return merged.filter((o) => (seen.has(o.value) ? false : (seen.add(o.value), true)));
+  }, [field.options, added]);
   const noun = field.createKind ? INLINE_MASTER_LABELS[field.createKind] : "value";
+  const dependsOnLabel = field.dependsOn === "sectionId" ? "section" : field.dependsOn;
 
   async function create() {
     if (!field.createKind) return;
     const text = draft.trim();
     if (!text) return;
     setBusy(true);
-    const result = await createMasterValue(field.createKind, text);
+    const context = field.dependsOn && dependsOnValue && dependsOnValue !== NONE ? { sectionId: dependsOnValue } : undefined;
+    const result = await createMasterValue(field.createKind, text, context);
     setBusy(false);
     if (!result.ok) {
       toast.error(result.error);
@@ -475,30 +498,36 @@ function CreatableSelect({
   }
 
   return (
-    <div className="flex items-center gap-2">
-      <Select items={options} value={value} onValueChange={(v) => onChange(v ?? NONE)}>
-        <SelectTrigger className="w-full">
-          <SelectValue placeholder={field.placeholder ?? "Select"} />
-        </SelectTrigger>
-        <SelectContent>
-          {options.map((o) => (
-            <SelectItem key={o.value} value={o.value}>
-              {o.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-      <Button
-        type="button"
-        size="sm"
-        variant="secondary"
-        className="shrink-0"
-        aria-label={`Add a new ${noun}`}
-        onClick={() => setAdding(true)}
-      >
-        <Plus className="h-3.5 w-3.5" />
-        New
-      </Button>
+    <div className="space-y-1">
+      <div className="flex items-center gap-2">
+        <Select items={options} value={value} onValueChange={(v) => onChange(v ?? NONE)}>
+          <SelectTrigger className="w-full">
+            <SelectValue placeholder={field.placeholder ?? "Select"} />
+          </SelectTrigger>
+          <SelectContent>
+            {options.map((o) => (
+              <SelectItem key={o.value} value={o.value}>
+                {o.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Button
+          type="button"
+          size="sm"
+          variant="secondary"
+          className="shrink-0"
+          disabled={!hasDependency}
+          aria-label={`Add a new ${noun}`}
+          onClick={() => setAdding(true)}
+        >
+          <Plus className="h-3.5 w-3.5" />
+          New
+        </Button>
+      </div>
+      {!hasDependency && dependsOnLabel && (
+        <p className="text-xs text-muted-foreground">Pick a {dependsOnLabel} above to add a new {noun}.</p>
+      )}
     </div>
   );
 }

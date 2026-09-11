@@ -518,7 +518,9 @@ export async function deleteHsnCode(id: string): Promise<ActionResult> {
  */
 export async function createMasterValue(
   kind: InlineMasterKind,
-  value: string
+  value: string,
+  /** Extra context a kind may need beyond its own name — currently only subsection's parent. */
+  context?: { sectionId?: string }
 ): Promise<ActionResult & { id?: string; label?: string }> {
   const gate = await requireManage();
   if (!gate.ok) return gate;
@@ -531,6 +533,17 @@ export async function createMasterValue(
 
   try {
     switch (kind) {
+      case "subsection": {
+        if (!context?.sectionId) return { ok: false, error: "Pick a section first." };
+        if (!(await assertSectionOwnedByBusiness(context.sectionId, businessId))) {
+          return { ok: false, error: "Section not found." };
+        }
+        const parsed = subsectionSchema.safeParse({ sectionId: context.sectionId, name: text });
+        if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
+        const [row] = await db.insert(subsections).values(parsed.data).returning();
+        const [section] = await db.select({ name: sections.name }).from(sections).where(eq(sections.id, context.sectionId)).limit(1);
+        return { ok: true, id: row.id, label: section ? `${section.name} / ${row.name}` : row.name };
+      }
       case "category": {
         const parsed = categorySchema.safeParse({ name: text });
         if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
