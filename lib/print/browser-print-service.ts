@@ -1,4 +1,11 @@
-import { PAGE_SIZES, type PrintJob, type PrintService } from "./service";
+import { PAGE_SIZES, type PrintFormat, type PrintJob, type PrintService } from "./service";
+
+const PAPER_WIDTHS: Record<PrintFormat, string> = {
+  a4: "210mm",
+  a5: "148mm",
+  "80mm": "80mm",
+  "58mm": "58mm",
+};
 
 /**
  * Printing through the browser's own dialog (which is also how "Save as PDF"
@@ -37,9 +44,10 @@ export class BrowserPrintService implements PrintService {
         body * { visibility: hidden !important; }
         [${MARKER}], [${MARKER}] * { visibility: visible !important; }
         [${MARKER}] {
-          position: absolute !important;
+          position: fixed !important;
           left: 0 !important;
           top: 0 !important;
+          width: ${PAPER_WIDTHS[job.format]} !important;
           margin: 0 !important;
           background: #fff !important;
           color: #000 !important;
