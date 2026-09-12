@@ -29,13 +29,17 @@ function SignInForm() {
   });
 
   async function onSubmit(values: SignInInput) {
-    const result = await signIn(values);
-    if (!result.ok) {
-      form.setError("root", { message: result.error });
-      return;
+    try {
+      const result = await signIn(values);
+      if (!result.ok) {
+        form.setError("root", { message: result.error });
+        return;
+      }
+      router.push(searchParams.get("next") ?? "/dashboard");
+      router.refresh();
+    } catch (err) {
+      form.setError("root", { message: err instanceof Error ? err.message : "Something went wrong. Please try again." });
     }
-    router.push(searchParams.get("next") ?? "/dashboard");
-    router.refresh();
   }
 
   return (

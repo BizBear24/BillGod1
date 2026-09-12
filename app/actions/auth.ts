@@ -19,24 +19,26 @@ export async function signUp(input: unknown): Promise<ActionResult> {
   }
   const { name, email, password } = parsed.data;
 
-  const db = await getDb();
-  const existing = await db.select().from(users).where(eq(users.email, email)).limit(1);
-  if (existing.length > 0) {
-    return { ok: false, error: "An account with this email already exists." };
+  try {
+    const db = await getDb();
+    const existing = await db.select().from(users).where(eq(users.email, email)).limit(1);
+    if (existing.length > 0) {
+      return { ok: false, error: "An account with this email already exists." };
+    }
+
+    const passwordHash = await hashPassword(password);
+    const [user] = await db.insert(users).values({ name, email, passwordHash, emailVerifiedAt: new Date() }).returning();
+
+    await logAudit({ userId: user.id, action: "user.sign_up", entityType: "user", entityId: user.id });
+
+    const sessionToken = await createSession(user.id);
+    await setSessionCookie(sessionToken);
+
+    return { ok: true };
+  } catch (err) {
+    console.error("[auth] signUp failed:", err);
+    return { ok: false, error: "Account creation failed. Please check server configuration." };
   }
-
-  const passwordHash = await hashPassword(password);
-  // Email verification is not required: no production mail provider is
-  // wired up yet, and gating signup on a send that would throw is what froze
-  // account creation once hosted. Accounts are trusted and usable immediately.
-  const [user] = await db.insert(users).values({ name, email, passwordHash, emailVerifiedAt: new Date() }).returning();
-
-  await logAudit({ userId: user.id, action: "user.sign_up", entityType: "user", entityId: user.id });
-
-  const sessionToken = await createSession(user.id);
-  await setSessionCookie(sessionToken);
-
-  return { ok: true };
 }
 
 export async function signIn(input: unknown): Promise<ActionResult> {
@@ -46,23 +48,28 @@ export async function signIn(input: unknown): Promise<ActionResult> {
   }
   const { email, password } = parsed.data;
 
-  const db = await getDb();
-  const rows = await db.select().from(users).where(eq(users.email, email)).limit(1);
-  const user = rows[0];
-  if (!user) {
-    return { ok: false, error: "Incorrect email or password." };
+  try {
+    const db = await getDb();
+    const rows = await db.select().from(users).where(eq(users.email, email)).limit(1);
+    const user = rows[0];
+    if (!user) {
+      return { ok: false, error: "Incorrect email or password." };
+    }
+
+    const valid = await verifyPassword(password, user.passwordHash);
+    if (!valid) {
+      return { ok: false, error: "Incorrect email or password." };
+    }
+
+    const sessionToken = await createSession(user.id);
+    await setSessionCookie(sessionToken);
+    await logAudit({ userId: user.id, action: "user.sign_in", entityType: "user", entityId: user.id });
+
+    return { ok: true };
+  } catch (err) {
+    console.error("[auth] signIn failed:", err);
+    return { ok: false, error: "Sign in failed. Please check server configuration." };
   }
-
-  const valid = await verifyPassword(password, user.passwordHash);
-  if (!valid) {
-    return { ok: false, error: "Incorrect email or password." };
-  }
-
-  const sessionToken = await createSession(user.id);
-  await setSessionCookie(sessionToken);
-  await logAudit({ userId: user.id, action: "user.sign_in", entityType: "user", entityId: user.id });
-
-  return { ok: true };
 }
 
 export async function signOut(): Promise<void> {
