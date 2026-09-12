@@ -5,7 +5,7 @@ import { getDb } from "@/db/client";
 import { users, passwordResetTokens } from "@/db/schema";
 import { hashPassword, verifyPassword } from "@/lib/auth/password";
 import { generateToken, hashToken } from "@/lib/auth/tokens";
-import { createSession, setSessionCookie, clearSessionCookie, getSessionUser, invalidateSession } from "@/lib/auth/session";
+import { createSession, setSessionCookie, clearSessionCookie, getSessionUser, invalidateSession, requireSessionUser } from "@/lib/auth/session";
 import { getEmailService } from "@/lib/email";
 import { logAudit } from "@/lib/audit";
 import { signUpSchema, signInSchema, requestResetSchema, resetPasswordSchema } from "@/lib/validation/auth";
