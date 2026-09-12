@@ -2,7 +2,7 @@
 
 import { eq, and, gt } from "drizzle-orm";
 import { getDb } from "@/db/client";
-import { users, emailVerificationTokens, passwordResetTokens } from "@/db/schema";
+import { users, passwordResetTokens } from "@/db/schema";
 import { hashPassword, verifyPassword } from "@/lib/auth/password";
 import { generateToken, hashToken } from "@/lib/auth/tokens";
 import { createSession, setSessionCookie, clearSessionCookie, getSessionUser, invalidateSession } from "@/lib/auth/session";
@@ -26,21 +26,10 @@ export async function signUp(input: unknown): Promise<ActionResult> {
   }
 
   const passwordHash = await hashPassword(password);
-  const [user] = await db.insert(users).values({ name, email, passwordHash }).returning();
-
-  const { raw, hash } = generateToken();
-  await db.insert(emailVerificationTokens).values({
-    userId: user.id,
-    tokenHash: hash,
-    expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
-  });
-
-  const verifyUrl = `${process.env.APP_URL ?? "http://localhost:3000"}/verify-email?token=${raw}`;
-  await getEmailService().send({
-    to: email,
-    subject: "Verify your BillGod account",
-    body: `Hi ${name},\n\nWelcome to BillGod. Verify your email to get started:\n${verifyUrl}\n\nThis link expires in 24 hours.`,
-  });
+  // Email verification is not required: no production mail provider is
+  // wired up yet, and gating signup on a send that would throw is what froze
+  // account creation once hosted. Accounts are trusted and usable immediately.
+  const [user] = await db.insert(users).values({ name, email, passwordHash, emailVerifiedAt: new Date() }).returning();
 
   await logAudit({ userId: user.id, action: "user.sign_up", entityType: "user", entityId: user.id });
 
@@ -85,28 +74,6 @@ export async function signOut(): Promise<void> {
   await clearSessionCookie();
 }
 
-export async function verifyEmail(token: string): Promise<ActionResult> {
-  const db = await getDb();
-  const tokenHash = hashToken(token);
-
-  const rows = await db
-    .select()
-    .from(emailVerificationTokens)
-    .where(and(eq(emailVerificationTokens.tokenHash, tokenHash), gt(emailVerificationTokens.expiresAt, new Date())))
-    .limit(1);
-
-  const row = rows[0];
-  if (!row) {
-    return { ok: false, error: "This verification link is invalid or has expired." };
-  }
-
-  await db.update(users).set({ emailVerifiedAt: new Date() }).where(eq(users.id, row.userId));
-  await db.delete(emailVerificationTokens).where(eq(emailVerificationTokens.id, row.id));
-  await logAudit({ userId: row.userId, action: "user.email_verified", entityType: "user", entityId: row.userId });
-
-  return { ok: true };
-}
-
 export async function requestPasswordReset(input: unknown): Promise<ActionResult> {
   const parsed = requestResetSchema.safeParse(input);
   if (!parsed.success) {
@@ -126,11 +93,18 @@ export async function requestPasswordReset(input: unknown): Promise<ActionResult
       expiresAt: new Date(Date.now() + 60 * 60 * 1000),
     });
     const resetUrl = `${process.env.APP_URL ?? "http://localhost:3000"}/reset-password?token=${raw}`;
-    await getEmailService().send({
-      to: user.email,
-      subject: "Reset your BillGod password",
-      body: `Hi ${user.name},\n\nReset your password using this link:\n${resetUrl}\n\nThis link expires in 1 hour. If you didn't request this, you can ignore this email.`,
-    });
+    // Best-effort: no mail provider being configured must never block or
+    // fail this action, since the response already avoids confirming whether
+    // the account exists either way.
+    try {
+      await getEmailService().send({
+        to: user.email,
+        subject: "Reset your BillGod password",
+        body: `Hi ${user.name},\n\nReset your password using this link:\n${resetUrl}\n\nThis link expires in 1 hour. If you didn't request this, you can ignore this email.`,
+      });
+    } catch (err) {
+      console.error("[auth] password reset email failed to send:", err);
+    }
     await logAudit({ userId: user.id, action: "user.password_reset_requested", entityType: "user", entityId: user.id });
   }
 

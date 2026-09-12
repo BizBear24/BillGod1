@@ -1,5 +1,6 @@
 import { listSuppliers, createSupplier, updateSupplier, deleteSupplier } from "@/app/actions/parties";
 import { EntityCrudManager, type CrudField } from "@/components/app/entity-crud-manager";
+import { EntityImportExport } from "@/components/app/entity-import-export";
 
 const fields: CrudField[] = [
   { name: "name", label: "Name", type: "text" },
@@ -23,6 +24,7 @@ export default async function SuppliersPage() {
         <h1 className="text-3xl font-bold">Suppliers</h1>
         <p className="text-muted-foreground">Vendors you purchase stock from.</p>
       </div>
+      <EntityImportExport kind="supplier" canManage={data.canManage} />
       <EntityCrudManager
         title="Suppliers"
         kind="supplier"

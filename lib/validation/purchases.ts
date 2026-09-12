@@ -39,6 +39,11 @@ export const createPurchaseSchema = z.object({
   docType: z.enum(PURCHASE_DOC_TYPES).default("purchase"),
   isDraft: z.boolean().optional(),
   warehouseId: z.string().optional(),
+  /** The purchase a return is raised against, so it can be validated against what was actually received. */
+  originalPurchaseId: z
+    .string()
+    .optional()
+    .transform((v) => (v && v !== "none" ? v : undefined)),
   supplierId: z.string().min(1, "Select a supplier"),
   supplierInvoiceNumber: z.string().trim().optional(),
   notes: z.string().trim().optional(),

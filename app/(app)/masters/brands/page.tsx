@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { getMastersData, createBrand, updateBrand, deleteBrand } from "@/app/actions/masters";
 import { EntityCrudManager } from "@/components/app/entity-crud-manager";
+import { EntityImportExport } from "@/components/app/entity-import-export";
 
 export default async function BrandsPage() {
   const data = await getMastersData();
@@ -15,6 +16,7 @@ export default async function BrandsPage() {
         </Link>
         <h1 className="mt-1 text-3xl font-bold">Brands</h1>
       </div>
+      <EntityImportExport kind="brand" canManage={data.canManage} />
       <EntityCrudManager
         title="Brands"
         kind="brand"

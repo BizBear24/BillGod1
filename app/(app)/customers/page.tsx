@@ -1,6 +1,7 @@
 import { listCustomers, createCustomer, updateCustomer, deleteCustomer } from "@/app/actions/parties";
 import { CUSTOMER_TYPES } from "@/lib/validation/parties";
 import { EntityCrudManager, type CrudField } from "@/components/app/entity-crud-manager";
+import { EntityImportExport } from "@/components/app/entity-import-export";
 
 const fields: CrudField[] = [
   { name: "name", label: "Name", type: "text" },
@@ -27,6 +28,7 @@ export default async function CustomersPage() {
         <h1 className="text-3xl font-bold">Customers</h1>
         <p className="text-muted-foreground">Retail, wholesale and B2B customers.</p>
       </div>
+      <EntityImportExport kind="customer" canManage={data.canManage} />
       <EntityCrudManager
         title="Customers"
         kind="customer"

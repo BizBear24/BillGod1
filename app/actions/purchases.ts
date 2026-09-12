@@ -2,7 +2,7 @@
 
 import { eq, and, desc, inArray, sql } from "drizzle-orm";
 import { getDb } from "@/db/client";
-import { purchases, purchaseItems, purchasePayments, products, suppliers, taxRates, stockMovements } from "@/db/schema";
+import { purchases, purchaseItems, purchasePayments, products, suppliers, taxRates, stockMovements, hsnCodes } from "@/db/schema";
 import { requireSessionUser, getActiveMembership } from "@/lib/auth/session";
 import { can, PERMISSIONS } from "@/lib/auth/permissions";
 import { logAudit } from "@/lib/audit";
@@ -96,6 +96,23 @@ export async function savePurchase(
   const [supplier] = await db.select().from(suppliers).where(and(eq(suppliers.id, parsed.data.supplierId), eq(suppliers.businessId, businessId))).limit(1);
   if (!supplier) return { ok: false, error: "Supplier not found." };
 
+  // A return can be raised against a specific purchase, which is what lets it
+  // be validated against what was actually received on that document.
+  let original: typeof purchases.$inferSelect | null = null;
+  if (parsed.data.originalPurchaseId) {
+    if (parsed.data.docType !== "purchase_return") return { ok: false, error: "Only a purchase return can be raised against another purchase." };
+    const [row] = await db
+      .select()
+      .from(purchases)
+      .where(and(eq(purchases.id, parsed.data.originalPurchaseId), eq(purchases.businessId, businessId)))
+      .limit(1);
+    if (!row) return { ok: false, error: "The purchase being returned against was not found." };
+    if (row.docType !== "purchase") return { ok: false, error: "Returns can only be raised against a purchase." };
+    if (row.status !== "completed") return { ok: false, error: "That purchase is not completed, so nothing can be returned against it." };
+    if (row.supplierId !== parsed.data.supplierId) return { ok: false, error: "The return's supplier must match the original purchase's supplier." };
+    original = row;
+  }
+
   const { lines, subtotal, discountAmount, taxAmount, totalAmount } = computeTotals(parsed.data.items);
   const amountPaid = round2((parsed.data.payments ?? []).reduce((sum, p) => sum + p.amount, 0));
   const status = parsed.data.isDraft ? "draft" : "completed";
@@ -153,6 +170,7 @@ export async function savePurchase(
             docType: parsed.data.docType,
             status,
             warehouseId: parsed.data.warehouseId ?? null,
+            originalPurchaseId: original?.id ?? null,
             supplierId: parsed.data.supplierId,
             supplierInvoiceNumber: parsed.data.supplierInvoiceNumber || null,
             subtotal: String(subtotal),
@@ -179,6 +197,7 @@ export async function savePurchase(
             docNumber,
             status,
             warehouseId: parsed.data.warehouseId ?? null,
+            originalPurchaseId: original?.id ?? null,
             supplierId: parsed.data.supplierId,
             supplierInvoiceNumber: parsed.data.supplierInvoiceNumber || null,
             subtotal: String(subtotal),
@@ -419,13 +438,14 @@ export async function getPurchasesPageData() {
   const db = await getDb();
   const businessId = membership.businessId;
 
-  const [productRows, supplierRows, taxRateRows, heldPurchases, warehouseRows, recent] = await Promise.all([
+  const [productRows, supplierRows, taxRateRows, heldPurchases, warehouseRows, recent, returnable] = await Promise.all([
     db.select().from(products).where(eq(products.businessId, businessId)),
     db.select().from(suppliers).where(eq(suppliers.businessId, businessId)),
     db.select().from(taxRates).where(eq(taxRates.businessId, businessId)),
     db.select().from(purchases).where(and(eq(purchases.businessId, businessId), eq(purchases.status, "draft"))).orderBy(desc(purchases.updatedAt)),
     listWarehousesForBusiness(businessId),
     listRecentPurchasesFor(businessId, 40),
+    listReturnablePurchasesFor(businessId, 100),
   ]);
 
   return {
@@ -435,6 +455,7 @@ export async function getPurchasesPageData() {
     heldPurchases,
     warehouses: warehouseRows,
     recentPurchases: recent,
+    returnablePurchases: returnable,
     canManage: can(membership.role, PERMISSIONS.PURCHASE_MANAGE),
   };
 }
@@ -478,4 +499,86 @@ export async function listRecentPurchases(limit = 50) {
   const membership = await getActiveMembership(sessionUser);
   if (!membership || !can(membership.role, PERMISSIONS.PURCHASE_VIEW)) throw new Error("FORBIDDEN");
   return listRecentPurchasesFor(membership.businessId, limit);
+}
+
+/** The completed purchases a return can be raised against, newest first. */
+async function listReturnablePurchasesFor(businessId: string, limit: number) {
+  const db = await getDb();
+  return db
+    .select({
+      id: purchases.id,
+      docNumber: purchases.docNumber,
+      totalAmount: purchases.totalAmount,
+      supplierId: purchases.supplierId,
+      createdAt: purchases.createdAt,
+    })
+    .from(purchases)
+    .where(and(eq(purchases.businessId, businessId), eq(purchases.docType, "purchase"), eq(purchases.status, "completed")))
+    .orderBy(desc(purchases.createdAt))
+    .limit(limit);
+}
+
+export async function listReturnablePurchases(limit = 100) {
+  const sessionUser = await requireSessionUser();
+  const membership = await getActiveMembership(sessionUser);
+  if (!membership || !can(membership.role, PERMISSIONS.PURCHASE_VIEW)) throw new Error("FORBIDDEN");
+  return listReturnablePurchasesFor(membership.businessId, limit);
+}
+
+/**
+ * Everything a Goods Receipt / purchase invoice needs to print itself: the
+ * document, its lines with their HSN codes, and the names behind the ids.
+ * Mirrors `getInvoiceData` in app/actions/sales.ts.
+ */
+export async function getPurchaseInvoiceData(purchaseId: string) {
+  const sessionUser = await requireSessionUser();
+  const membership = await getActiveMembership(sessionUser);
+  if (!membership || !can(membership.role, PERMISSIONS.PURCHASE_VIEW)) throw new Error("FORBIDDEN");
+
+  const db = await getDb();
+  const businessId = membership.businessId;
+
+  const [row] = await db
+    .select({
+      docNumber: purchases.docNumber,
+      docType: purchases.docType,
+      status: purchases.status,
+      createdAt: purchases.createdAt,
+      subtotal: purchases.subtotal,
+      discountAmount: purchases.discountAmount,
+      taxAmount: purchases.taxAmount,
+      roundOff: purchases.roundOff,
+      totalAmount: purchases.totalAmount,
+      amountPaid: purchases.amountPaid,
+      supplierInvoiceNumber: purchases.supplierInvoiceNumber,
+      supplierName: suppliers.name,
+      supplierPhone: suppliers.phone,
+      supplierGstin: suppliers.gstin,
+    })
+    .from(purchases)
+    .innerJoin(suppliers, eq(purchases.supplierId, suppliers.id))
+    .where(and(eq(purchases.id, purchaseId), eq(purchases.businessId, businessId)))
+    .limit(1);
+  if (!row) return null;
+
+  const itemRows = await db
+    .select({
+      id: purchaseItems.id,
+      itemCode: purchaseItems.itemCode,
+      name: purchaseItems.name,
+      quantity: purchaseItems.quantity,
+      unitCost: purchaseItems.unitCost,
+      discountPercent: purchaseItems.discountPercent,
+      taxRatePercent: purchaseItems.taxRatePercent,
+      taxAmount: purchaseItems.taxAmount,
+      lineTotal: purchaseItems.lineTotal,
+      hsn: hsnCodes.code,
+    })
+    .from(purchaseItems)
+    .leftJoin(products, eq(purchaseItems.productId, products.id))
+    .leftJoin(hsnCodes, eq(products.hsnId, hsnCodes.id))
+    .where(eq(purchaseItems.purchaseId, purchaseId))
+    .orderBy(purchaseItems.sortOrder);
+
+  return { purchase: row, lines: itemRows };
 }

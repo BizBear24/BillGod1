@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, numeric, integer, date, pgEnum, unique, index } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, numeric, integer, date, pgEnum, unique, index, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { businesses } from "./tenancy";
 import { branches, warehouses } from "./org";
 import { suppliers } from "./parties";
@@ -27,12 +27,20 @@ export const purchases = pgTable(
     docNumber: text("doc_number").notNull(),
     status: purchaseStatusEnum("status").notNull().default("draft"),
 
+    /**
+     * The bill a `purchase_return` is raised against, when it was picked.
+     * Mirrors `sales.originalSaleId` so a return can be validated against
+     * what was actually received on that purchase.
+     */
+    originalPurchaseId: text("original_purchase_id").references((): AnyPgColumn => purchases.id, { onDelete: "set null" }),
+
     supplierId: text("supplier_id").notNull().references(() => suppliers.id),
     supplierInvoiceNumber: text("supplier_invoice_number"),
 
     subtotal: numeric("subtotal", { precision: 14, scale: 2 }).notNull().default("0"),
     discountAmount: numeric("discount_amount", { precision: 14, scale: 2 }).notNull().default("0"),
     taxAmount: numeric("tax_amount", { precision: 14, scale: 2 }).notNull().default("0"),
+    roundOff: numeric("round_off", { precision: 6, scale: 2 }).notNull().default("0"),
     totalAmount: numeric("total_amount", { precision: 14, scale: 2 }).notNull().default("0"),
     amountPaid: numeric("amount_paid", { precision: 14, scale: 2 }).notNull().default("0"),
 

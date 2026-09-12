@@ -3,12 +3,15 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Search, Trash2, Plus, Minus, ShoppingCart, PauseCircle, X, Receipt, Ban, Award, Ticket } from "lucide-react";
-import { saveSale, discardHeldSale, getSaleWithItems, cancelSale } from "@/app/actions/sales";
+import { Search, Trash2, Plus, Minus, ShoppingCart, PauseCircle, X, Receipt, Ban, Award, Ticket, Printer } from "lucide-react";
+import { saveSale, discardHeldSale, getSaleWithItems, cancelSale, getInvoiceData } from "@/app/actions/sales";
 import { checkCoupon } from "@/app/actions/engagement";
 import { SALE_DOC_TYPES, SALE_DOC_TYPE_LABELS, SALE_PAYMENT_METHODS, SALE_PAYMENT_METHOD_LABELS } from "@/lib/validation/sales";
 import { computeSaleTotals, round2 } from "@/lib/sales/totals";
 import { resolveTier, type TierRow } from "@/lib/loyalty/tiers";
+import { InvoiceDocument, type InvoiceCompany } from "@/components/app/invoice-document";
+import { getPrintService, type PrintFormat } from "@/lib/print";
+import type { InvoiceDesign } from "@/lib/print/templates";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -86,6 +89,8 @@ export function BillingPos({
   tiers,
   serialsByProduct,
   canManage,
+  company,
+  invoiceDesign,
 }: {
   products: Product[];
   customers: Customer[];
@@ -101,6 +106,8 @@ export function BillingPos({
   /** In-stock serials the cashier can pick from, keyed by product id. */
   serialsByProduct: Record<string, string[]>;
   canManage: boolean;
+  company: InvoiceCompany | null;
+  invoiceDesign: InvoiceDesign;
 }) {
   const router = useRouter();
   const [search, setSearch] = React.useState("");
@@ -121,6 +128,7 @@ export function BillingPos({
   const [saving, setSaving] = React.useState(false);
   const [tab, setTab] = React.useState<"sell" | "held" | "recent">("sell");
   const [cancelTarget, setCancelTarget] = React.useState<RecentSale | null>(null);
+  const [justCompleted, setJustCompleted] = React.useState<{ id: string; docNumber: string } | null>(null);
 
   const taxRateById = React.useMemo(() => Object.fromEntries(taxRates.map((t) => [t.id, parseFloat(t.ratePercent)])), [taxRates]);
   const productById = React.useMemo(() => Object.fromEntries(products.map((p) => [p.id, p])), [products]);
@@ -133,6 +141,19 @@ export function BillingPos({
   // Passed to Select.Root as `items` so Select.Value can resolve a label right
   // away — otherwise it only knows labels once the popup has opened once.
   const docTypeItems = React.useMemo(() => SALE_DOC_TYPES.map((t) => ({ value: t, label: SALE_DOC_TYPE_LABELS[t] })), []);
+  // Deduped by percent — several named rates (e.g. "GST 18%" and "IGST 18%")
+  // can share a rate, and the cart line only stores the number.
+  const taxRateOptions = React.useMemo(() => {
+    const seen = new Set<number>();
+    const opts: { value: string; label: string }[] = [];
+    for (const t of taxRates) {
+      const pct = parseFloat(t.ratePercent);
+      if (!Number.isFinite(pct) || seen.has(pct)) continue;
+      seen.add(pct);
+      opts.push({ value: String(pct), label: `${pct}% — ${t.name}` });
+    }
+    return opts.sort((a, b) => parseFloat(a.value) - parseFloat(b.value));
+  }, [taxRates]);
   const paymentMethodItems = React.useMemo(() => SALE_PAYMENT_METHODS.map((m) => ({ value: m, label: SALE_PAYMENT_METHOD_LABELS[m] })), []);
   const salespersonItems = React.useMemo(
     () => [{ value: "none", label: "No salesperson" }, ...salespersons.map((s) => ({ value: s.id, label: s.name }))],
@@ -259,6 +280,7 @@ export function BillingPos({
     setCouponDraft("");
     setPayments([{ method: "cash", amount: 0 }]);
     setEditingSaleId(null);
+    setJustCompleted(null);
   }
 
   /**
@@ -332,7 +354,9 @@ export function BillingPos({
       return;
     }
     toast.success(isDraft ? `Held as ${result.docNumber}` : `${SALE_DOC_TYPE_LABELS[docType]} ${result.docNumber} completed`);
+    const completed = !isDraft && result.saleId && result.docNumber ? { id: result.saleId, docNumber: result.docNumber } : null;
     resetForm();
+    if (completed) setJustCompleted(completed);
     router.refresh();
   }
 
@@ -422,6 +446,17 @@ export function BillingPos({
       </TabsList>
 
       <TabsContent value="sell" className="space-y-4">
+        {justCompleted && (
+          <div className="flex items-center justify-between rounded-lg border border-chart-3/40 bg-chart-3/5 px-4 py-2 text-sm">
+            <span>{justCompleted.docNumber} completed.</span>
+            <div className="flex items-center gap-2">
+              <PrintSaleButton saleId={justCompleted.id} company={company} design={invoiceDesign} label={`Print ${justCompleted.docNumber}`} />
+              <Button variant="ghost" size="icon" aria-label="Dismiss" onClick={() => setJustCompleted(null)}>
+                <X className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          </div>
+        )}
         {editingSaleId && (
           <div className="flex items-center justify-between rounded-lg border border-primary/30 bg-primary/5 px-4 py-2 text-sm">
             <span>Editing a held bill.</span>
@@ -469,7 +504,24 @@ export function BillingPos({
             <Card>
               <CardContent className="space-y-3 py-4">
                 <div className="grid grid-cols-2 gap-2">
-                  <Select items={docTypeItems} value={docType} onValueChange={(v) => setDocType(v as (typeof SALE_DOC_TYPES)[number])}>
+                  <Select
+                    items={docTypeItems}
+                    value={docType}
+                    onValueChange={(v) => {
+                      const next = v as (typeof SALE_DOC_TYPES)[number];
+                      setDocType(next);
+                      // Redemption and coupons only apply to a completed sale
+                      // — carrying them across a doc-type switch would only
+                      // surface as a save-time error from the server.
+                      if (next !== "sale") {
+                        setRedeemPoints(0);
+                        setCoupon(null);
+                      }
+                      if (next !== "sale" && next !== "sale_return") {
+                        setPayments([{ method: "cash", amount: 0 }]);
+                      }
+                    }}
+                  >
                     <SelectTrigger className="w-full">
                       <SelectValue />
                     </SelectTrigger>
@@ -495,7 +547,7 @@ export function BillingPos({
                     </SelectContent>
                   </Select>
                 </div>
-                {warehouses.length > 0 && (
+                {warehouses.length > 0 ? (
                   <Select items={warehouseItems} value={warehouseId} onValueChange={(v) => setWarehouseId(v ?? "")}>
                     <SelectTrigger className="w-full">
                       <SelectValue placeholder="Warehouse (for stock)" />
@@ -508,6 +560,18 @@ export function BillingPos({
                       ))}
                     </SelectContent>
                   </Select>
+                ) : (
+                  movesStock && (
+                    <div className="space-y-1">
+                      <Select items={[]} value="" disabled onValueChange={() => {}}>
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="No warehouse configured" />
+                        </SelectTrigger>
+                        <SelectContent />
+                      </Select>
+                      <p className="text-xs text-destructive">Set up a warehouse under Settings before completing this bill.</p>
+                    </div>
+                  )
                 )}
                 {counters.length > 0 && (
                   <Select items={counterItems} value={counterId} onValueChange={(v) => setCounterId(v ?? "none")}>
@@ -650,7 +714,7 @@ export function BillingPos({
                     )}
                   </div>
                 )}
-                {loyalty.enabled && selectedCustomer && (
+                {docType === "sale" && loyalty.enabled && selectedCustomer && (
                   <div className="mb-2 space-y-1 rounded-lg border border-border p-2">
                     <div className="flex items-center justify-between text-xs">
                       <span className="font-semibold uppercase tracking-wide text-muted-foreground">Loyalty</span>
@@ -684,6 +748,8 @@ export function BillingPos({
                     )}
                   </div>
                 )}
+                {docType === "sale" || docType === "sale_return" ? (
+                  <>
                 <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Payment</p>
                 {payments.map((p, i) => (
                   <div key={i} className="flex items-center gap-2">
@@ -732,6 +798,12 @@ export function BillingPos({
                     Full amount
                   </Button>
                 </div>
+                  </>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    {SALE_DOC_TYPE_LABELS[docType]} documents don&apos;t collect payment — that happens when it&apos;s converted to a sale.
+                  </p>
+                )}
               </CardContent>
             </Card>
 
@@ -807,11 +879,10 @@ export function BillingPos({
                         />
                       </TableCell>
                       <TableCell>
-                        <Input
-                          type="number"
+                        <TaxRateCell
                           value={l.taxRatePercent}
-                          step="any"
-                          onChange={(e) => updateLine(l.productId, { taxRatePercent: parseFloat(e.target.value) || 0 })}
+                          options={taxRateOptions}
+                          onChange={(percent) => updateLine(l.productId, { taxRatePercent: percent })}
                         />
                       </TableCell>
                       <TableCell className="text-right font-medium">
@@ -911,12 +982,15 @@ export function BillingPos({
                       )}
                     </TableCell>
                     <TableCell className="text-right">
-                      {r.status === "completed" && (
-                        <Button variant="ghost" size="sm" onClick={() => setCancelTarget(r)}>
-                          <Ban className="h-3.5 w-3.5 text-destructive" />
-                          Cancel
-                        </Button>
-                      )}
+                      <div className="flex justify-end gap-1">
+                        <PrintSaleButton saleId={r.id} company={company} design={invoiceDesign} />
+                        {r.status === "completed" && (
+                          <Button variant="ghost" size="sm" onClick={() => setCancelTarget(r)}>
+                            <Ban className="h-3.5 w-3.5 text-destructive" />
+                            Cancel
+                          </Button>
+                        )}
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -938,6 +1012,132 @@ export function BillingPos({
   );
 }
 
+type InvoiceDetail = Awaited<ReturnType<typeof getInvoiceData>>;
+
+/**
+ * Prints one bill through the business's saved invoice design.
+ *
+ * Fetches the full invoice data on click (the POS list only carries summary
+ * columns), renders it off-screen with the same `InvoiceDocument` the
+ * designer previews with, then hands that element to the print service —
+ * so what a cashier prints can never drift from what Invoice Designer shows.
+ */
+function PrintSaleButton({
+  saleId,
+  company,
+  design,
+  label,
+}: {
+  saleId: string;
+  company: InvoiceCompany | null;
+  design: InvoiceDesign;
+  label?: string;
+}) {
+  const ref = React.useRef<HTMLDivElement>(null);
+  const [detail, setDetail] = React.useState<InvoiceDetail | null>(null);
+  const [loading, setLoading] = React.useState(false);
+
+  async function handleClick() {
+    setLoading(true);
+    try {
+      const data = await getInvoiceData(saleId);
+      if (!data) {
+        toast.error("Could not load that bill.");
+        return;
+      }
+      setDetail(data);
+    } catch {
+      toast.error("Could not load that bill.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // Waits for the off-screen document to actually be in the DOM before
+  // handing it to the print service, then clears it — nothing print-ready
+  // should sit mounted once the job is handed off.
+  React.useEffect(() => {
+    if (!detail || !ref.current) return;
+    const element = ref.current;
+    void getPrintService()
+      .print({ element, format: design.paper as PrintFormat, title: detail.sale.docNumber })
+      .finally(() => setDetail(null));
+  }, [detail, design.paper]);
+
+  return (
+    <>
+      <Button variant="ghost" size="sm" disabled={loading} onClick={handleClick}>
+        <Printer className="h-3.5 w-3.5" />
+        {loading ? "Loading…" : (label ?? "Print")}
+      </Button>
+      {detail && (
+        <div className="fixed left-[-9999px] top-0" aria-hidden>
+          <div ref={ref}>
+            <InvoiceDocument design={design} company={company} sale={detail.sale} lines={detail.lines} />
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+/**
+ * Tax % for a cart line: a dropdown of the business's configured tax rates
+ * when there are any, with a "Custom %" escape hatch for a one-off line —
+ * rather than a bare number input that lets any figure through unchecked.
+ */
+function TaxRateCell({
+  value,
+  options,
+  onChange,
+}: {
+  value: number;
+  options: { value: string; label: string }[];
+  onChange: (percent: number) => void;
+}) {
+  const matched = options.some((o) => parseFloat(o.value) === value);
+  const [custom, setCustom] = React.useState(!matched);
+
+  if (options.length === 0 || custom) {
+    return (
+      <div className="flex items-center gap-1">
+        <Input type="number" value={value} step="any" onChange={(e) => onChange(parseFloat(e.target.value) || 0)} />
+        {options.length > 0 && (
+          <Button type="button" variant="ghost" size="sm" className="shrink-0 px-1.5" onClick={() => setCustom(false)}>
+            Rates
+          </Button>
+        )}
+      </div>
+    );
+  }
+
+  const selectItems = [...options, { value: "custom", label: "Custom %" }];
+  return (
+    <Select
+      items={selectItems}
+      value={String(value)}
+      onValueChange={(v) => {
+        if (!v || v === "custom") {
+          setCustom(true);
+          return;
+        }
+        onChange(parseFloat(v) || 0);
+      }}
+    >
+      <SelectTrigger className="w-full">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {options.map((o) => (
+          <SelectItem key={o.value} value={o.value}>
+            {o.label}
+          </SelectItem>
+        ))}
+        <SelectItem value="custom">Custom %</SelectItem>
+      </SelectContent>
+    </Select>
+  );
+}
 
 /**
  * Serial entry for a line whose product is tracked one unit at a time.

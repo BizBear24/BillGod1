@@ -3,9 +3,13 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Search, Trash2, Plus, Minus, ShoppingBag, PauseCircle, X, Receipt, Ban } from "lucide-react";
-import { savePurchase, discardHeldPurchase, getPurchaseWithItems, cancelPurchase } from "@/app/actions/purchases";
+import { Search, Trash2, Plus, Minus, ShoppingBag, PauseCircle, X, Receipt, Ban, Printer } from "lucide-react";
+import { savePurchase, discardHeldPurchase, getPurchaseWithItems, cancelPurchase, getPurchaseInvoiceData } from "@/app/actions/purchases";
 import { PURCHASE_DOC_TYPES, PURCHASE_DOC_TYPE_LABELS, PURCHASE_PAYMENT_METHODS, PURCHASE_PAYMENT_METHOD_LABELS } from "@/lib/validation/purchases";
+import { PurchaseDocument } from "@/components/app/purchase-document";
+import type { InvoiceCompany } from "@/components/app/invoice-document";
+import { getPrintService, type PrintFormat } from "@/lib/print";
+import type { InvoiceDesign } from "@/lib/print/templates";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -28,6 +32,7 @@ type Supplier = { id: string; name: string; phone: string | null };
 type TaxRate = { id: string; ratePercent: string };
 type Warehouse = { id: string; name: string; label: string };
 type HeldPurchase = { id: string; docNumber: string; docType: string; totalAmount: string; updatedAt: Date };
+type ReturnablePurchase = { id: string; docNumber: string; totalAmount: string; supplierId: string; createdAt: Date };
 
 type CartLine = {
   productId: string;
@@ -66,7 +71,10 @@ export function PurchasePos({
   warehouses,
   heldPurchases,
   recentPurchases,
+  returnablePurchases,
   canManage,
+  company,
+  invoiceDesign,
 }: {
   products: Product[];
   suppliers: Supplier[];
@@ -74,7 +82,10 @@ export function PurchasePos({
   warehouses: Warehouse[];
   heldPurchases: HeldPurchase[];
   recentPurchases: RecentPurchase[];
+  returnablePurchases: ReturnablePurchase[];
   canManage: boolean;
+  company: InvoiceCompany | null;
+  invoiceDesign: InvoiceDesign;
 }) {
   const router = useRouter();
   const [search, setSearch] = React.useState("");
@@ -83,11 +94,13 @@ export function PurchasePos({
   const [supplierId, setSupplierId] = React.useState(suppliers[0]?.id ?? "");
   const [warehouseId, setWarehouseId] = React.useState(warehouses[0]?.id ?? "");
   const [supplierInvoiceNumber, setSupplierInvoiceNumber] = React.useState("");
+  const [originalPurchaseId, setOriginalPurchaseId] = React.useState("none");
   const [payments, setPayments] = React.useState<PaymentRow[]>([{ method: "cash", amount: 0 }]);
   const [editingId, setEditingId] = React.useState<string | null>(null);
   const [saving, setSaving] = React.useState(false);
   const [tab, setTab] = React.useState<"buy" | "held" | "recent">("buy");
   const [cancelTarget, setCancelTarget] = React.useState<RecentPurchase | null>(null);
+  const [justCompleted, setJustCompleted] = React.useState<{ id: string; docNumber: string } | null>(null);
 
   const taxRateById = React.useMemo(() => Object.fromEntries(taxRates.map((t) => [t.id, parseFloat(t.ratePercent)])), [taxRates]);
   const productById = React.useMemo(() => Object.fromEntries(products.map((p) => [p.id, p])), [products]);
@@ -101,6 +114,15 @@ export function PurchasePos({
   const paymentMethodItems = React.useMemo(() => PURCHASE_PAYMENT_METHODS.map((m) => ({ value: m, label: PURCHASE_PAYMENT_METHOD_LABELS[m] })), []);
   const supplierItems = React.useMemo(() => suppliers.map((s) => ({ value: s.id, label: s.name })), [suppliers]);
   const warehouseItems = React.useMemo(() => warehouses.map((w) => ({ value: w.id, label: w.label })), [warehouses]);
+  // Only bills from the supplier currently selected can be returned against —
+  // a return has to match the party it is crediting.
+  const originalPurchaseItems = React.useMemo(
+    () => [
+      { value: "none", label: "Not against a specific purchase" },
+      ...returnablePurchases.filter((p) => p.supplierId === supplierId).map((p) => ({ value: p.id, label: `${p.docNumber} — ${money(parseFloat(p.totalAmount))}` })),
+    ],
+    [returnablePurchases, supplierId]
+  );
 
   const filtered = React.useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -173,8 +195,10 @@ export function PurchasePos({
     setSupplierId(suppliers[0]?.id ?? "");
     setWarehouseId(warehouses[0]?.id ?? "");
     setSupplierInvoiceNumber("");
+    setOriginalPurchaseId("none");
     setPayments([{ method: "cash", amount: 0 }]);
     setEditingId(null);
+    setJustCompleted(null);
   }
 
   async function handleSave(isDraft: boolean) {
@@ -202,6 +226,7 @@ export function PurchasePos({
       docType,
       isDraft,
       warehouseId,
+      originalPurchaseId: docType === "purchase_return" ? originalPurchaseId : "none",
       supplierId,
       supplierInvoiceNumber,
       items: cart.map((l) => ({
@@ -224,7 +249,9 @@ export function PurchasePos({
       return;
     }
     toast.success(isDraft ? `Held as ${result.docNumber}` : `${PURCHASE_DOC_TYPE_LABELS[docType]} ${result.docNumber} completed`);
+    const completed = !isDraft && result.purchaseId && result.docNumber ? { id: result.purchaseId, docNumber: result.docNumber } : null;
     resetForm();
+    if (completed) setJustCompleted(completed);
     router.refresh();
   }
 
@@ -242,6 +269,7 @@ export function PurchasePos({
     setSupplierId(data.purchase.supplierId);
     setWarehouseId(data.purchase.warehouseId ?? warehouses[0]?.id ?? "");
     setSupplierInvoiceNumber(data.purchase.supplierInvoiceNumber ?? "");
+    setOriginalPurchaseId(data.purchase.originalPurchaseId ?? "none");
     setCart(
       validItems.map((i) => ({
         productId: i.productId,
@@ -321,6 +349,17 @@ export function PurchasePos({
       </TabsList>
 
       <TabsContent value="buy" className="space-y-4">
+        {justCompleted && (
+          <div className="flex items-center justify-between rounded-lg border border-chart-3/40 bg-chart-3/5 px-4 py-2 text-sm">
+            <span>{justCompleted.docNumber} completed.</span>
+            <div className="flex items-center gap-2">
+              <PrintPurchaseButton purchaseId={justCompleted.id} company={company} design={invoiceDesign} label={`Print ${justCompleted.docNumber}`} />
+              <Button variant="ghost" size="icon" aria-label="Dismiss" onClick={() => setJustCompleted(null)}>
+                <X className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          </div>
+        )}
         {editingId && (
           <div className="flex items-center justify-between rounded-lg border border-primary/30 bg-primary/5 px-4 py-2 text-sm">
             <span>Editing a held document.</span>
@@ -368,7 +407,15 @@ export function PurchasePos({
             <Card>
               <CardContent className="space-y-3 py-4">
                 <div className="grid grid-cols-2 gap-2">
-                  <Select items={docTypeItems} value={docType} onValueChange={(v) => setDocType(v as (typeof PURCHASE_DOC_TYPES)[number])}>
+                  <Select
+                    items={docTypeItems}
+                    value={docType}
+                    onValueChange={(v) => {
+                      const next = v as (typeof PURCHASE_DOC_TYPES)[number];
+                      setDocType(next);
+                      if (next !== "purchase_return") setOriginalPurchaseId("none");
+                    }}
+                  >
                     <SelectTrigger className="w-full">
                       <SelectValue />
                     </SelectTrigger>
@@ -393,7 +440,7 @@ export function PurchasePos({
                     </SelectContent>
                   </Select>
                 </div>
-                {warehouses.length > 0 && (
+                {warehouses.length > 0 ? (
                   <Select items={warehouseItems} value={warehouseId} onValueChange={(v) => setWarehouseId(v ?? "")}>
                     <SelectTrigger className="w-full">
                       <SelectValue placeholder="Warehouse (for stock)" />
@@ -404,6 +451,35 @@ export function PurchasePos({
                           {w.label}
                         </SelectItem>
                       ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  movesStock && (
+                    <div className="space-y-1">
+                      <Select items={[]} value="" disabled onValueChange={() => {}}>
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="No warehouse configured" />
+                        </SelectTrigger>
+                        <SelectContent />
+                      </Select>
+                      <p className="text-xs text-destructive">Set up a warehouse under Settings before completing this document.</p>
+                    </div>
+                  )
+                )}
+                {docType === "purchase_return" && (
+                  <Select items={originalPurchaseItems} value={originalPurchaseId} onValueChange={(v) => setOriginalPurchaseId(v ?? "none")}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Return against purchase" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Not against a specific purchase</SelectItem>
+                      {returnablePurchases
+                        .filter((p) => p.supplierId === supplierId)
+                        .map((p) => (
+                          <SelectItem key={p.id} value={p.id}>
+                            {p.docNumber} — {money(parseFloat(p.totalAmount))}
+                          </SelectItem>
+                        ))}
                     </SelectContent>
                   </Select>
                 )}
@@ -644,12 +720,15 @@ export function PurchasePos({
                       )}
                     </TableCell>
                     <TableCell className="text-right">
-                      {r.status === "completed" && (
-                        <Button variant="ghost" size="sm" onClick={() => setCancelTarget(r)}>
-                          <Ban className="h-3.5 w-3.5 text-destructive" />
-                          Cancel
-                        </Button>
-                      )}
+                      <div className="flex justify-end gap-1">
+                        <PrintPurchaseButton purchaseId={r.id} company={company} design={invoiceDesign} />
+                        {r.status === "completed" && (
+                          <Button variant="ghost" size="sm" onClick={() => setCancelTarget(r)}>
+                            <Ban className="h-3.5 w-3.5 text-destructive" />
+                            Cancel
+                          </Button>
+                        )}
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -671,6 +750,64 @@ export function PurchasePos({
   );
 }
 
+type PurchaseInvoiceDetail = Awaited<ReturnType<typeof getPurchaseInvoiceData>>;
+
+/** Prints one purchase document. Mirrors `PrintSaleButton` in billing-pos.tsx. */
+function PrintPurchaseButton({
+  purchaseId,
+  company,
+  design,
+  label,
+}: {
+  purchaseId: string;
+  company: InvoiceCompany | null;
+  design: InvoiceDesign;
+  label?: string;
+}) {
+  const ref = React.useRef<HTMLDivElement>(null);
+  const [detail, setDetail] = React.useState<PurchaseInvoiceDetail | null>(null);
+  const [loading, setLoading] = React.useState(false);
+
+  async function handleClick() {
+    setLoading(true);
+    try {
+      const data = await getPurchaseInvoiceData(purchaseId);
+      if (!data) {
+        toast.error("Could not load that document.");
+        return;
+      }
+      setDetail(data);
+    } catch {
+      toast.error("Could not load that document.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  React.useEffect(() => {
+    if (!detail || !ref.current) return;
+    const element = ref.current;
+    void getPrintService()
+      .print({ element, format: design.paper as PrintFormat, title: detail.purchase.docNumber })
+      .finally(() => setDetail(null));
+  }, [detail, design.paper]);
+
+  return (
+    <>
+      <Button variant="ghost" size="sm" disabled={loading} onClick={handleClick}>
+        <Printer className="h-3.5 w-3.5" />
+        {loading ? "Loading…" : (label ?? "Print")}
+      </Button>
+      {detail && (
+        <div className="fixed left-[-9999px] top-0" aria-hidden>
+          <div ref={ref}>
+            <PurchaseDocument design={design} company={company} purchase={detail.purchase} lines={detail.lines} />
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
 
 /**
  * Serial entry for a received line. Units arriving from a supplier are new to

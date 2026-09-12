@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { getMastersData, createTaxRate, updateTaxRate, deleteTaxRate, createHsnCode, updateHsnCode, deleteHsnCode } from "@/app/actions/masters";
 import { EntityCrudManager } from "@/components/app/entity-crud-manager";
+import { EntityImportExport } from "@/components/app/entity-import-export";
 
 export default async function HsnPage() {
   const data = await getMastersData();
@@ -18,6 +19,7 @@ export default async function HsnPage() {
         <h1 className="mt-1 text-3xl font-bold">HSN Codes &amp; Tax Rates</h1>
       </div>
 
+      <EntityImportExport kind="taxRate" canManage={data.canManage} />
       <EntityCrudManager
         title="Tax Rates"
         description="GST rate presets (e.g. GST 18%) that HSN codes and products reference."
@@ -40,6 +42,7 @@ export default async function HsnPage() {
         canManage={data.canManage}
       />
 
+      <EntityImportExport kind="hsnCode" canManage={data.canManage} />
       <EntityCrudManager
         title="HSN / SAC Codes"
         kind="hsnCode"

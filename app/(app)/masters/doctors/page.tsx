@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { getMastersData, createDoctor, updateDoctor, deleteDoctor } from "@/app/actions/masters";
 import { EntityCrudManager } from "@/components/app/entity-crud-manager";
+import { EntityImportExport } from "@/components/app/entity-import-export";
 
 export default async function DoctorsPage() {
   const data = await getMastersData();
@@ -15,6 +16,7 @@ export default async function DoctorsPage() {
         </Link>
         <h1 className="mt-1 text-3xl font-bold">Doctors</h1>
       </div>
+      <EntityImportExport kind="doctor" canManage={data.canManage} />
       <EntityCrudManager
         title="Doctors"
         kind="doctor"

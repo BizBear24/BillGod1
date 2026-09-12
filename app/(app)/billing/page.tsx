@@ -1,8 +1,20 @@
+import { eq } from "drizzle-orm";
+import { getDb } from "@/db/client";
+import { companies } from "@/db/schema";
+import { requireSessionUser, getActiveMembership } from "@/lib/auth/session";
 import { getBillingPageData, listReturnableSales } from "@/app/actions/sales";
+import { getDefaultDesigns } from "@/app/actions/print-templates";
 import { BillingPos } from "@/components/app/billing-pos";
 
 export default async function BillingPage() {
-  const [data, returnableSales] = await Promise.all([getBillingPageData(), listReturnableSales()]);
+  const sessionUser = await requireSessionUser();
+  const membership = await getActiveMembership(sessionUser);
+  const db = await getDb();
+  const companyRows = membership
+    ? await db.select().from(companies).where(eq(companies.businessId, membership.businessId)).limit(1)
+    : [];
+
+  const [data, returnableSales, defaults] = await Promise.all([getBillingPageData(), listReturnableSales(), getDefaultDesigns()]);
 
   return (
     <div className="space-y-6">
@@ -24,6 +36,8 @@ export default async function BillingPage() {
         tiers={data.tiers}
         serialsByProduct={data.serialsByProduct}
         canManage={data.canManage}
+        company={companyRows[0] ?? null}
+        invoiceDesign={defaults.invoice}
       />
     </div>
   );
