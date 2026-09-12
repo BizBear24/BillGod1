@@ -49,12 +49,11 @@ export function SettingsEditor({
 
 const profileSchema = z.object({
   name: z.string().trim().min(2, "Name must be at least 2 characters"),
-  email: z.string().trim().email("Enter a valid email address"),
 });
 
 function ProfileSection({ user }: { user: User }) {
   const router = useRouter();
-  const form = useForm({ resolver: zodResolver(profileSchema), defaultValues: { name: user.name, email: user.email } });
+  const form = useForm({ resolver: zodResolver(profileSchema), defaultValues: { name: user.name } });
 
   async function onSubmit(values: z.infer<typeof profileSchema>) {
     const result = await updateProfile(values);
@@ -74,13 +73,10 @@ function ProfileSection({ user }: { user: User }) {
               <FormMessage />
             </FormItem>
           )} />
-          <FormField control={form.control} name="email" render={({ field }) => (
-            <FormItem>
-              <FormLabel>Email</FormLabel>
-              <FormControl><Input type="email" placeholder="you@example.com" {...field} /></FormControl>
-              <FormMessage />
-            </FormItem>
-          )} />
+          <div className="space-y-1">
+            <p className="text-sm font-medium">Email</p>
+            <p className="text-sm text-muted-foreground">{user.email}</p>
+          </div>
           <SaveButton submitting={form.formState.isSubmitting} />
         </form>
       </Form>
