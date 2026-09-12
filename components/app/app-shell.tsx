@@ -38,7 +38,7 @@ export function AppShell({
 
   return (
     <div className="flex min-h-screen bg-background">
-      <aside className="hidden w-72 shrink-0 flex-col border-r border-sidebar-border bg-sidebar md:flex">
+      <aside className="hidden w-64 shrink-0 flex-col border-r border-sidebar-border bg-sidebar md:flex">
         <SidebarContent />
       </aside>
 
@@ -79,11 +79,11 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
 
   return (
     <>
-      <div className="flex h-16 items-center gap-3 px-5">
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground text-lg font-bold">B</div>
-        <span className="text-xl font-bold tracking-tight text-sidebar-foreground">{t("app.name")}</span>
+      <div className="flex h-16 items-center gap-3 px-4">
+        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground text-base font-bold shrink-0">B</div>
+        <span className="text-lg font-bold tracking-tight text-sidebar-foreground">{t("app.name")}</span>
       </div>
-      <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 py-3">
+      <nav className="flex-1 space-y-0.5 overflow-y-auto px-2.5 py-2">
         {NAV_ITEMS.map((item) => {
           const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
           const Icon = item.icon;
@@ -92,13 +92,17 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
               key={item.href}
               href={item.href}
               onClick={onNavigate}
-              className={`flex items-center gap-3 rounded-lg px-4 py-3 text-[0.9375rem] font-medium transition-colors ${
+              className={`group flex items-center gap-3 rounded-lg px-3 py-2.5 text-[0.9rem] font-medium transition-all ${
                 active
-                  ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+                  ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-sm"
+                  : "text-sidebar-foreground/60 hover:bg-sidebar-accent/40 hover:text-sidebar-foreground"
               }`}
             >
-              <Icon className="h-[1.15rem] w-[1.15rem] shrink-0" />
+              <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md ${
+                active ? "bg-background/60" : "bg-sidebar-accent/30 group-hover:bg-sidebar-accent/50"
+              }`}>
+                <Icon className={`h-[1.05rem] w-[1.05rem] ${active ? item.accent : item.accent} opacity-90`} />
+              </span>
               {t(item.labelKey)}
             </Link>
           );
