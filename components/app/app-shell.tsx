@@ -92,16 +92,16 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
               key={item.href}
               href={item.href}
               onClick={onNavigate}
-              className={`group flex items-center gap-3 rounded-xl border px-3 py-2.5 text-[0.875rem] font-medium transition-all ${
+              className={`group flex items-center gap-3 rounded-xl border px-3 py-3 text-[0.9375rem] font-semibold transition-all ${
                 active
                   ? "border-sidebar-accent bg-sidebar-accent text-sidebar-accent-foreground shadow-sm"
                   : "border-sidebar-border/50 bg-sidebar-accent/10 text-sidebar-foreground/60 hover:border-sidebar-border hover:bg-sidebar-accent/30 hover:text-sidebar-foreground"
               }`}
             >
-              <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${
+              <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
                 active ? "bg-background/50" : "bg-background/40 group-hover:bg-background/60"
               }`}>
-                <Icon className={`h-4 w-4 ${item.accent}`} />
+                <Icon className={`h-[1.1rem] w-[1.1rem] ${item.accent}`} />
               </span>
               {t(item.labelKey)}
             </Link>
