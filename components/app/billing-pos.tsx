@@ -88,6 +88,7 @@ export function BillingPos({
   loyalty,
   tiers,
   serialsByProduct,
+  stockByProduct,
   canManage,
   company,
   invoiceDesign,
@@ -105,6 +106,7 @@ export function BillingPos({
   tiers: TierRow[];
   /** In-stock serials the cashier can pick from, keyed by product id. */
   serialsByProduct: Record<string, string[]>;
+  stockByProduct: Record<string, number>;
   canManage: boolean;
   company: InvoiceCompany | null;
   invoiceDesign: InvoiceDesign;
@@ -480,27 +482,88 @@ export function BillingPos({
               />
             </div>
             <div className="grid gap-2 sm:grid-cols-2">
-              {filtered.map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => addProduct(p)}
-                  className="flex items-center justify-between rounded-lg border border-border px-3 py-2 text-left text-sm transition-colors hover:border-primary/40 hover:bg-accent/40"
-                >
-                  <div className="min-w-0">
-                    <p className="truncate font-medium">{p.name}</p>
-                    <p className="text-xs text-muted-foreground">{p.itemCode}</p>
-                  </div>
-                  <Badge variant="secondary" className="shrink-0">
-                    {money(parseFloat(p.sellingPrice) || 0)}
-                  </Badge>
-                </button>
-              ))}
+              {filtered.map((p) => {
+                const stock = stockByProduct[p.id] ?? 0;
+                const isOut = stock <= 0;
+                const isLow = !isOut && stock <= 10;
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => addProduct(p)}
+                    className={`flex items-center justify-between rounded-xl border px-3 py-2.5 text-left text-sm transition-colors ${
+                      isOut
+                        ? "border-destructive/40 bg-destructive/10 opacity-70 hover:bg-destructive/15"
+                        : isLow
+                          ? "border-yellow-500/40 bg-yellow-500/10 hover:bg-yellow-500/15"
+                          : "border-border hover:border-primary/40 hover:bg-accent/40"
+                    }`}
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate font-medium">{p.name}</p>
+                      <p className="text-xs text-muted-foreground">{p.itemCode}</p>
+                      {isOut && <p className="text-xs font-medium text-destructive">Out of stock</p>}
+                      {isLow && <p className="text-xs font-medium text-yellow-500">Low stock ({stock})</p>}
+                    </div>
+                    <Badge variant="secondary" className="shrink-0 ml-2">
+                      {money(parseFloat(p.sellingPrice) || 0)}
+                    </Badge>
+                  </button>
+                );
+              })}
               {filtered.length === 0 && <p className="col-span-2 py-6 text-center text-sm text-muted-foreground">No products match.</p>}
             </div>
           </div>
 
           <div className="space-y-4 lg:col-span-2">
+            {/* Cart preview — shows items and quick qty controls */}
+            <Card>
+              <CardContent className="py-3">
+                {cart.length === 0 ? (
+                  <p className="py-4 text-center text-sm text-muted-foreground">No items added yet</p>
+                ) : (
+                  <div className="space-y-1.5">
+                    {cart.map((l) => (
+                      <div key={l.productId} className="flex items-center gap-2 rounded-lg bg-accent/20 px-2.5 py-2">
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium leading-tight">{l.name}</p>
+                          <p className="text-xs text-muted-foreground">{money(l.unitPrice)} each</p>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            aria-label="Decrease quantity"
+                            onClick={() => l.quantity > 1 ? updateLine(l.productId, { quantity: l.quantity - 1 }) : removeLine(l.productId)}
+                            className="flex h-6 w-6 items-center justify-center rounded-md border border-border text-muted-foreground hover:bg-accent hover:text-foreground"
+                          >
+                            <Minus className="h-3 w-3" />
+                          </button>
+                          <span className="w-6 text-center text-sm font-semibold tabular-nums">{l.quantity}</span>
+                          <button
+                            type="button"
+                            aria-label="Increase quantity"
+                            onClick={() => updateLine(l.productId, { quantity: l.quantity + 1 })}
+                            className="flex h-6 w-6 items-center justify-center rounded-md border border-border text-muted-foreground hover:bg-accent hover:text-foreground"
+                          >
+                            <Plus className="h-3 w-3" />
+                          </button>
+                        </div>
+                        <span className="w-16 text-right text-sm font-semibold tabular-nums">{money(l.quantity * l.unitPrice)}</span>
+                        <button
+                          type="button"
+                          aria-label="Remove item"
+                          onClick={() => removeLine(l.productId)}
+                          className="text-muted-foreground/50 hover:text-destructive"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
             <Card>
               <CardContent className="space-y-3 py-4">
                 <div className="grid grid-cols-2 gap-2">

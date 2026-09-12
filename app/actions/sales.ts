@@ -734,10 +734,20 @@ export async function getBillingPageData() {
 
   // Only the serial-tracked products need their in-stock units listed, so the
   // POS can offer the cashier a pick list instead of asking them to type.
-  const serialsByProduct = await listSerialsInStock(
-    businessId,
-    productRows.filter((p) => p.trackSerial).map((p) => p.id)
-  );
+  const [serialsByProduct, stockRows] = await Promise.all([
+    listSerialsInStock(
+      businessId,
+      productRows.filter((p) => p.trackSerial).map((p) => p.id)
+    ),
+    db
+      .select({ productId: stockMovements.productId, total: sql<string>`sum(${stockMovements.quantity})` })
+      .from(stockMovements)
+      .where(eq(stockMovements.businessId, businessId))
+      .groupBy(stockMovements.productId),
+  ]);
+
+  const stockByProduct: Record<string, number> = {};
+  for (const row of stockRows) stockByProduct[row.productId] = parseFloat(row.total ?? "0");
 
   return {
     products: productRows,
@@ -751,6 +761,7 @@ export async function getBillingPageData() {
     tiers: tierRows,
     recentSales: recent,
     serialsByProduct,
+    stockByProduct,
     canManage: can(membership.role, PERMISSIONS.BILLING_MANAGE),
   };
 }

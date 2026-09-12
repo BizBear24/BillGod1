@@ -35,6 +35,7 @@ export default async function BillingPage() {
         loyalty={data.loyalty}
         tiers={data.tiers}
         serialsByProduct={data.serialsByProduct}
+        stockByProduct={data.stockByProduct}
         canManage={data.canManage}
         company={companyRows[0] ?? null}
         invoiceDesign={defaults.invoice}

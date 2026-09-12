@@ -83,7 +83,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
         <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground text-base font-bold shrink-0">B</div>
         <span className="text-lg font-bold tracking-tight text-sidebar-foreground">{t("app.name")}</span>
       </div>
-      <nav className="flex-1 space-y-1.5 overflow-y-auto px-3 py-3">
+      <nav className="flex-1 space-y-2 overflow-y-auto px-3 py-3">
         {NAV_ITEMS.map((item) => {
           const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
           const Icon = item.icon;
@@ -92,16 +92,16 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
               key={item.href}
               href={item.href}
               onClick={onNavigate}
-              className={`group flex items-center gap-3 rounded-xl border px-3 py-3 text-[0.9375rem] font-semibold transition-all ${
+              className={`group flex items-center gap-3.5 rounded-2xl border px-4 py-3.5 text-base font-semibold transition-all ${
                 active
-                  ? "border-sidebar-accent bg-sidebar-accent text-sidebar-accent-foreground shadow-sm"
+                  ? "border-sidebar-accent bg-sidebar-accent text-sidebar-accent-foreground shadow-md"
                   : "border-sidebar-border/50 bg-sidebar-accent/10 text-sidebar-foreground/60 hover:border-sidebar-border hover:bg-sidebar-accent/30 hover:text-sidebar-foreground"
               }`}
             >
-              <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
+              <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${
                 active ? "bg-background/50" : "bg-background/40 group-hover:bg-background/60"
               }`}>
-                <Icon className={`h-[1.1rem] w-[1.1rem] ${item.accent}`} />
+                <Icon className={`h-5 w-5 ${item.accent}`} />
               </span>
               {t(item.labelKey)}
             </Link>
