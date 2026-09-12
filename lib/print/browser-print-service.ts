@@ -39,7 +39,7 @@ export class BrowserPrintService implements PrintService {
     style.id = STYLE_ID;
     style.textContent = `
       @media print {
-        @page { size: ${page.css}; margin: ${page.marginCss}; }
+        @page { size: ${page.css}; margin: 0; }
         html, body { background: #fff !important; }
         body * { visibility: hidden !important; }
         [${MARKER}], [${MARKER}] * { visibility: visible !important; }
@@ -47,7 +47,7 @@ export class BrowserPrintService implements PrintService {
           position: fixed !important;
           left: 0 !important;
           top: 0 !important;
-          width: ${PAPER_WIDTHS[job.format]} !important;
+          width: 100% !important;
           margin: 0 !important;
           background: #fff !important;
           color: #000 !important;

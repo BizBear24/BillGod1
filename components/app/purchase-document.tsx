@@ -79,14 +79,15 @@ export function PurchaseDocument({
     <div
       className={className}
       style={{
-        width: `${paper.widthMm}mm`,
-        maxWidth: "100%",
+        width: "100%",
+        maxWidth: `${paper.widthMm}mm`,
         padding: `${design.marginMm}mm`,
         background: "#fff",
         color: "#000",
         fontSize: `${base}px`,
         lineHeight: 1.35,
         boxSizing: "border-box",
+        fontFamily: "Arial, Helvetica, sans-serif",
       }}
     >
       <div style={{ textAlign: "center", marginBottom: `${base * 0.6}px` }}>
@@ -221,7 +222,7 @@ export function PurchaseDocument({
 
       <div style={{ borderTop: "1px dashed #000", margin: `${base * 0.4}px 0` }} />
 
-      <div style={{ marginLeft: "auto", maxWidth: narrow ? "100%" : "62mm", breakInside: "avoid", pageBreakInside: "avoid" }}>
+      <div style={{ marginLeft: "auto", width: narrow ? "100%" : "45%", breakInside: "avoid", pageBreakInside: "avoid" }}>
         {design.showSubtotal && <TotalRow label="Subtotal" value={money(purchase.subtotal)} base={base} />}
         {design.showDiscount && num(purchase.discountAmount) > 0 && <TotalRow label="Discount" value={`-${money(purchase.discountAmount)}`} base={base} />}
         {design.showTax && num(purchase.taxAmount) > 0 && <TotalRow label="Tax" value={money(purchase.taxAmount)} base={base} />}
@@ -272,15 +273,18 @@ function TotalRow({ label, value, base, strong, accent }: { label: string; value
       style={{
         display: "flex",
         justifyContent: "space-between",
+        alignItems: "baseline",
+        gap: "4px",
         fontWeight: strong ? 700 : 400,
         fontSize: strong ? `${base * 1.1}px` : undefined,
         color: strong && accent ? accent : undefined,
         borderTop: strong ? "1px solid #000" : undefined,
         paddingTop: strong ? `${base * 0.15}px` : undefined,
+        marginBottom: `${base * 0.1}px`,
       }}
     >
-      <span>{label}</span>
-      <span>₹{value}</span>
+      <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
+      <span style={{ whiteSpace: "nowrap", flexShrink: 0 }}>₹{value}</span>
     </div>
   );
 }

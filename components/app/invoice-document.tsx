@@ -132,14 +132,15 @@ export function InvoiceDocument({
     <div
       className={className}
       style={{
-        width: `${paper.widthMm}mm`,
-        maxWidth: "100%",
+        width: "100%",
+        maxWidth: `${paper.widthMm}mm`,
         padding: `${design.marginMm}mm`,
         background: "#fff",
         color: "#000",
         fontSize: `${base}px`,
         lineHeight: 1.35,
         boxSizing: "border-box",
+        fontFamily: "Arial, Helvetica, sans-serif",
       }}
     >
       {/* ------------------------------------------------------------ head */}
@@ -216,7 +217,7 @@ export function InvoiceDocument({
       <div style={{ borderTop: "1px dashed #000", margin: `${base * 0.4}px 0` }} />
 
       {/* ------------------------------------------------ the item band */}
-      <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
+      <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed", overflowWrap: "break-word" }}>
         <colgroup>
           {visible.map((c) => (
             <col key={c.key} style={{ width: `${(c.widthPercent / widthTotal) * 100}%` }} />
@@ -271,7 +272,7 @@ export function InvoiceDocument({
       <div style={{ borderTop: "1px dashed #000", margin: `${base * 0.4}px 0` }} />
 
       {/* -------------------------------------------------------- totals */}
-      <div style={{ marginLeft: "auto", maxWidth: narrow ? "100%" : "62mm", breakInside: "avoid", pageBreakInside: "avoid" }}>
+      <div style={{ marginLeft: "auto", width: narrow ? "100%" : "45%", breakInside: "avoid", pageBreakInside: "avoid" }}>
         {design.showSubtotal && <TotalRow label="Subtotal" value={money(sale.subtotal)} base={base} />}
         {design.showDiscount && num(sale.discountAmount) > 0 && (
           <TotalRow
@@ -338,15 +339,18 @@ function TotalRow({
       style={{
         display: "flex",
         justifyContent: "space-between",
+        alignItems: "baseline",
+        gap: "4px",
         fontWeight: strong ? 700 : 400,
         fontSize: strong ? `${base * 1.1}px` : undefined,
         color: strong && accent ? accent : undefined,
         borderTop: strong ? "1px solid #000" : undefined,
         paddingTop: strong ? `${base * 0.15}px` : undefined,
+        marginBottom: `${base * 0.1}px`,
       }}
     >
-      <span>{label}</span>
-      <span>₹{value}</span>
+      <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
+      <span style={{ whiteSpace: "nowrap", flexShrink: 0 }}>₹{value}</span>
     </div>
   );
 }
