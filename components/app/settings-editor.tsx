@@ -47,11 +47,14 @@ export function SettingsEditor({
 
 /* ------------------------------------------------------------------ Profile */
 
-const profileSchema = z.object({ name: z.string().trim().min(2, "Name must be at least 2 characters") });
+const profileSchema = z.object({
+  name: z.string().trim().min(2, "Name must be at least 2 characters"),
+  email: z.string().trim().email("Enter a valid email address"),
+});
 
 function ProfileSection({ user }: { user: User }) {
   const router = useRouter();
-  const form = useForm({ resolver: zodResolver(profileSchema), defaultValues: { name: user.name } });
+  const form = useForm({ resolver: zodResolver(profileSchema), defaultValues: { name: user.name, email: user.email } });
 
   async function onSubmit(values: z.infer<typeof profileSchema>) {
     const result = await updateProfile(values);
@@ -67,15 +70,17 @@ function ProfileSection({ user }: { user: User }) {
           <FormField control={form.control} name="name" render={({ field }) => (
             <FormItem>
               <FormLabel>Full Name</FormLabel>
-              <FormControl><Input {...field} /></FormControl>
+              <FormControl><Input placeholder="Your name" {...field} /></FormControl>
               <FormMessage />
             </FormItem>
           )} />
-          <div>
-            <p className="text-sm text-muted-foreground mb-1">Email</p>
-            <p className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-sm">{user.email}</p>
-            <p className="text-xs text-muted-foreground mt-1">Email cannot be changed here. Contact support if needed.</p>
-          </div>
+          <FormField control={form.control} name="email" render={({ field }) => (
+            <FormItem>
+              <FormLabel>Email</FormLabel>
+              <FormControl><Input type="email" placeholder="you@example.com" {...field} /></FormControl>
+              <FormMessage />
+            </FormItem>
+          )} />
           <SaveButton submitting={form.formState.isSubmitting} />
         </form>
       </Form>

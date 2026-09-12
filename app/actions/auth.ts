@@ -148,6 +148,7 @@ export async function resetPassword(input: unknown): Promise<ActionResult> {
 
 const updateProfileSchema = z.object({
   name: z.string().trim().min(2, "Name must be at least 2 characters"),
+  email: z.string().trim().email("Enter a valid email address"),
 });
 
 export async function updateProfile(input: unknown): Promise<ActionResult> {
@@ -156,7 +157,12 @@ export async function updateProfile(input: unknown): Promise<ActionResult> {
     const parsed = updateProfileSchema.safeParse(input);
     if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input." };
     const db = await getDb();
-    await db.update(users).set({ name: parsed.data.name, updatedAt: new Date() }).where(eq(users.id, sessionUser.userId));
+    // Check email uniqueness only if it changed
+    if (parsed.data.email.toLowerCase() !== sessionUser.email.toLowerCase()) {
+      const [existing] = await db.select({ id: users.id }).from(users).where(eq(users.email, parsed.data.email.toLowerCase())).limit(1);
+      if (existing) return { ok: false, error: "That email is already in use." };
+    }
+    await db.update(users).set({ name: parsed.data.name, email: parsed.data.email.toLowerCase(), updatedAt: new Date() }).where(eq(users.id, sessionUser.userId));
     return { ok: true };
   } catch {
     return { ok: false, error: "Failed to update profile." };
