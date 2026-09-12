@@ -9,6 +9,7 @@ import { createSession, setSessionCookie, clearSessionCookie, getSessionUser, in
 import { getEmailService } from "@/lib/email";
 import { logAudit } from "@/lib/audit";
 import { signUpSchema, signInSchema, requestResetSchema, resetPasswordSchema } from "@/lib/validation/auth";
+import { z } from "zod";
 
 export type ActionResult = { ok: true } | { ok: false; error: string };
 
@@ -143,4 +144,44 @@ export async function resetPassword(input: unknown): Promise<ActionResult> {
   await logAudit({ userId: row.userId, action: "user.password_reset", entityType: "user", entityId: row.userId });
 
   return { ok: true };
+}
+
+const updateProfileSchema = z.object({
+  name: z.string().trim().min(2, "Name must be at least 2 characters"),
+});
+
+export async function updateProfile(input: unknown): Promise<ActionResult> {
+  try {
+    const sessionUser = await requireSessionUser();
+    const parsed = updateProfileSchema.safeParse(input);
+    if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input." };
+    const db = await getDb();
+    await db.update(users).set({ name: parsed.data.name, updatedAt: new Date() }).where(eq(users.id, sessionUser.userId));
+    return { ok: true };
+  } catch {
+    return { ok: false, error: "Failed to update profile." };
+  }
+}
+
+const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1, "Enter your current password"),
+  newPassword: z.string().min(8, "New password must be at least 8 characters"),
+});
+
+export async function changePassword(input: unknown): Promise<ActionResult> {
+  try {
+    const sessionUser = await requireSessionUser();
+    const parsed = changePasswordSchema.safeParse(input);
+    if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input." };
+    const db = await getDb();
+    const [user] = await db.select().from(users).where(eq(users.id, sessionUser.userId)).limit(1);
+    if (!user) return { ok: false, error: "User not found." };
+    const valid = await verifyPassword(parsed.data.currentPassword, user.passwordHash);
+    if (!valid) return { ok: false, error: "Current password is incorrect." };
+    const passwordHash = await hashPassword(parsed.data.newPassword);
+    await db.update(users).set({ passwordHash, updatedAt: new Date() }).where(eq(users.id, sessionUser.userId));
+    return { ok: true };
+  } catch {
+    return { ok: false, error: "Failed to change password." };
+  }
 }

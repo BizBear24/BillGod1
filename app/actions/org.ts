@@ -305,3 +305,47 @@ export async function listCountersForBusiness(businessId: string) {
     label: (nameCounts.get(c.name) ?? 0) > 1 ? `${c.name} (${branchNameById.get(c.branchId) ?? "?"})` : c.name,
   }));
 }
+
+export async function updateBusiness(input: { name: string; currency: string }): Promise<ActionResult> {
+  const sessionUser = await requireSessionUser();
+  const membership = await getActiveMembership(sessionUser);
+  if (!membership || !can(membership.role, PERMISSIONS.COMPANY_MANAGE)) return { ok: false, error: "Not allowed." };
+  const db = await getDb();
+  await db.update(businesses).set({ name: input.name.trim(), currency: input.currency.trim(), updatedAt: new Date() }).where(eq(businesses.id, membership.businessId));
+  return { ok: true };
+}
+
+export async function updateCompany(companyId: string, input: {
+  name: string; gstin?: string; businessType?: string;
+  addressLine1?: string; city?: string; state?: string; pincode?: string; phone?: string; email?: string;
+}): Promise<ActionResult> {
+  const sessionUser = await requireSessionUser();
+  const membership = await getActiveMembership(sessionUser);
+  if (!membership || !can(membership.role, PERMISSIONS.COMPANY_MANAGE)) return { ok: false, error: "Not allowed." };
+  const db = await getDb();
+  const [row] = await db.select({ id: companies.id }).from(companies).where(and(eq(companies.id, companyId), eq(companies.businessId, membership.businessId))).limit(1);
+  if (!row) return { ok: false, error: "Company not found." };
+  await db.update(companies).set({
+    name: input.name.trim(),
+    gstin: input.gstin?.trim() || null,
+    businessType: input.businessType?.trim() || null,
+    addressLine1: input.addressLine1?.trim() || null,
+    city: input.city?.trim() || null,
+    state: input.state?.trim() || null,
+    pincode: input.pincode?.trim() || null,
+    phone: input.phone?.trim() || null,
+    email: input.email?.trim() || null,
+    updatedAt: new Date(),
+  }).where(eq(companies.id, companyId));
+  return { ok: true };
+}
+
+export async function getSettingsData() {
+  const sessionUser = await requireSessionUser();
+  const membership = await getActiveMembership(sessionUser);
+  if (!membership) return null;
+  const db = await getDb();
+  const [business] = await db.select().from(businesses).where(eq(businesses.id, membership.businessId)).limit(1);
+  const companyRows = await db.select().from(companies).where(eq(companies.businessId, membership.businessId));
+  return { business, companies: companyRows, user: sessionUser, canManage: can(membership.role, PERMISSIONS.COMPANY_MANAGE) };
+}
