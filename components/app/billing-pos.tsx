@@ -1022,6 +1022,14 @@ type InvoiceDetail = Awaited<ReturnType<typeof getInvoiceData>>;
  * designer previews with, then hands that element to the print service —
  * so what a cashier prints can never drift from what Invoice Designer shows.
  */
+const PRINT_SIZES = [
+  { value: "a4", label: "A4" },
+  { value: "a5", label: "A5" },
+  { value: "80mm", label: "80mm" },
+  { value: "58mm", label: "58mm" },
+] as const;
+type PrintSize = (typeof PRINT_SIZES)[number]["value"];
+
 function PrintSaleButton({
   saleId,
   company,
@@ -1036,15 +1044,14 @@ function PrintSaleButton({
   const ref = React.useRef<HTMLDivElement>(null);
   const [detail, setDetail] = React.useState<InvoiceDetail | null>(null);
   const [loading, setLoading] = React.useState(false);
+  const [size, setSize] = React.useState<PrintSize>(design.paper as PrintSize);
+  const activeDesign = React.useMemo(() => ({ ...design, paper: size }), [design, size]);
 
   async function handleClick() {
     setLoading(true);
     try {
       const data = await getInvoiceData(saleId);
-      if (!data) {
-        toast.error("Could not load that bill.");
-        return;
-      }
+      if (!data) { toast.error("Could not load that bill."); return; }
       setDetail(data);
     } catch {
       toast.error("Could not load that bill.");
@@ -1053,27 +1060,36 @@ function PrintSaleButton({
     }
   }
 
-  // Waits for the off-screen document to actually be in the DOM before
-  // handing it to the print service, then clears it — nothing print-ready
-  // should sit mounted once the job is handed off.
   React.useEffect(() => {
     if (!detail || !ref.current) return;
     const element = ref.current;
     void getPrintService()
-      .print({ element, format: design.paper as PrintFormat, title: detail.sale.docNumber })
+      .print({ element, format: size as PrintFormat, title: detail.sale.docNumber })
       .finally(() => setDetail(null));
-  }, [detail, design.paper]);
+  }, [detail, size]);
 
   return (
     <>
-      <Button variant="ghost" size="sm" disabled={loading} onClick={handleClick}>
-        <Printer className="h-3.5 w-3.5" />
-        {loading ? "Loading…" : (label ?? "Print")}
-      </Button>
+      <div className="flex items-center gap-0.5">
+        <Button variant="ghost" size="sm" disabled={loading} onClick={handleClick}>
+          <Printer className="h-3.5 w-3.5" />
+          {loading ? "Loading…" : (label ?? "Print")}
+        </Button>
+        <Select items={PRINT_SIZES} value={size} onValueChange={(v) => v && setSize(v as PrintSize)}>
+          <SelectTrigger className="h-7 w-[62px] px-1.5 text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {PRINT_SIZES.map((s) => (
+              <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
       {detail && (
         <div className="fixed left-[-9999px] top-0" aria-hidden>
           <div ref={ref}>
-            <InvoiceDocument design={design} company={company} sale={detail.sale} lines={detail.lines} />
+            <InvoiceDocument design={activeDesign} company={company} sale={detail.sale} lines={detail.lines} />
           </div>
         </div>
       )}

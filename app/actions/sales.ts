@@ -316,6 +316,39 @@ export async function saveSale(saleId: string | null, input: unknown): Promise<A
       // "completed" — drafts can only be re-edited while still draft, so this
       // branch can never run twice for the same sale.
       if (status === "completed" && stockDirection && parsed.data.warehouseId) {
+        // Guard: refuse to sell more than what is currently in stock.
+        if (stockDirection === "out") {
+          const productQtyMap = new Map<string, number>();
+          for (const line of lines) {
+            if (!line.productId) continue;
+            productQtyMap.set(line.productId, (productQtyMap.get(line.productId) ?? 0) + parseFloat(line.quantity));
+          }
+          if (productQtyMap.size > 0) {
+            const balanceRows = await tx
+              .select({
+                productId: stockMovements.productId,
+                balance: sql<string>`sum(${stockMovements.quantity}::numeric)`,
+              })
+              .from(stockMovements)
+              .where(
+                and(
+                  eq(stockMovements.businessId, businessId),
+                  eq(stockMovements.warehouseId, parsed.data.warehouseId),
+                  inArray(stockMovements.productId, [...productQtyMap.keys()])
+                )
+              )
+              .groupBy(stockMovements.productId);
+            const balanceMap = new Map(balanceRows.map((r) => [r.productId, parseFloat(r.balance ?? "0")]));
+            for (const [pid, qty] of productQtyMap) {
+              const onHand = balanceMap.get(pid) ?? 0;
+              if (onHand < qty) {
+                const product = trackedProducts.get(pid);
+                throw new Error(`Insufficient stock for "${product?.name ?? pid}": ${onHand} available, ${qty} requested.`);
+              }
+            }
+          }
+        }
+
         const sign = stockDirection === "in" ? 1 : -1;
         const movementType: "sale_return_in" | "sale_out" = stockDirection === "in" ? "sale_return_in" : "sale_out";
         await tx.insert(stockMovements).values(

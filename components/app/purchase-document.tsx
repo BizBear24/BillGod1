@@ -102,6 +102,9 @@ export function PurchaseDocument({
             {company.phone && <p>Ph: {company.phone}</p>}
           </>
         )}
+        {design.headerLines.filter(Boolean).map((line, i) => (
+          <p key={i}>{line}</p>
+        ))}
       </div>
 
       {purchase.status === "cancelled" && (
@@ -219,20 +222,23 @@ export function PurchaseDocument({
       <div style={{ borderTop: "1px dashed #000", margin: `${base * 0.4}px 0` }} />
 
       <div style={{ marginLeft: "auto", maxWidth: narrow ? "100%" : "62mm", breakInside: "avoid", pageBreakInside: "avoid" }}>
-        <TotalRow label="Subtotal" value={money(purchase.subtotal)} base={base} />
-        {num(purchase.discountAmount) > 0 && <TotalRow label="Discount" value={`-${money(purchase.discountAmount)}`} base={base} />}
-        {num(purchase.taxAmount) > 0 && <TotalRow label="Tax" value={money(purchase.taxAmount)} base={base} />}
-        {num(purchase.roundOff) !== 0 && <TotalRow label="Round off" value={money(purchase.roundOff)} base={base} />}
+        {design.showSubtotal && <TotalRow label="Subtotal" value={money(purchase.subtotal)} base={base} />}
+        {design.showDiscount && num(purchase.discountAmount) > 0 && <TotalRow label="Discount" value={`-${money(purchase.discountAmount)}`} base={base} />}
+        {design.showTax && num(purchase.taxAmount) > 0 && <TotalRow label="Tax" value={money(purchase.taxAmount)} base={base} />}
+        {design.showRoundOff && num(purchase.roundOff) !== 0 && <TotalRow label="Round off" value={money(purchase.roundOff)} base={base} />}
         <TotalRow label="Total" value={money(purchase.totalAmount)} base={base} strong accent={design.accentColor} />
-        <TotalRow label="Paid" value={money(purchase.amountPaid)} base={base} />
-        <TotalRow label="Balance" value={money(balance)} base={base} strong />
+        {design.showPaid && <TotalRow label="Paid" value={money(purchase.amountPaid)} base={base} />}
+        {design.showBalance && <TotalRow label="Balance" value={money(balance)} base={base} strong />}
       </div>
 
-      {!narrow && (
+      {design.showAmountInWords && (
         <p style={{ marginTop: `${base * 0.4}px`, fontStyle: "italic", breakInside: "avoid" }}>{amountInWords(num(purchase.totalAmount))}</p>
       )}
 
       <div style={{ marginTop: `${base * 0.8}px`, breakInside: "avoid", pageBreakInside: "avoid" }}>
+        {design.footerLines.filter(Boolean).map((line, i) => (
+          <p key={i} style={{ textAlign: "center" }}>{line}</p>
+        ))}
         {design.showSignature && (
           <div style={{ marginTop: `${base * 2.2}px`, textAlign: "right" }}>
             <span style={{ borderTop: "1px solid #000", paddingTop: `${base * 0.2}px` }}>{design.signatureLabel}</span>

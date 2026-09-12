@@ -63,6 +63,13 @@ export type InvoiceSale = {
   counterName: string | null;
 };
 
+const DOC_TITLE_OVERRIDES: Record<string, string> = {
+  sale_return: "CREDIT NOTE / RETURN",
+  quotation: "QUOTATION",
+  sale_order: "SALE ORDER",
+  challan: "DELIVERY CHALLAN",
+};
+
 const num = (value: string | number) => (typeof value === "number" ? value : parseFloat(value) || 0);
 const money = (value: string | number) => num(value).toFixed(2);
 
@@ -137,7 +144,9 @@ export function InvoiceDocument({
     >
       {/* ------------------------------------------------------------ head */}
       <div style={{ textAlign: "center", marginBottom: `${base * 0.6}px` }}>
-        <p style={{ fontSize: `${base * 1.35}px`, fontWeight: 700, letterSpacing: "0.06em", color: design.accentColor }}>{design.title}</p>
+        <p style={{ fontSize: `${base * 1.35}px`, fontWeight: 700, letterSpacing: "0.06em", color: design.accentColor }}>
+          {DOC_TITLE_OVERRIDES[sale.docType] ?? design.title}
+        </p>
         {design.showCompanyBlock && company && (
           <>
             <p style={{ fontSize: `${base * 1.15}px`, fontWeight: 700 }}>{company.name}</p>
