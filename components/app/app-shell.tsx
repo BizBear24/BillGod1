@@ -83,7 +83,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
         <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground text-base font-bold shrink-0">B</div>
         <span className="text-lg font-bold tracking-tight text-sidebar-foreground">{t("app.name")}</span>
       </div>
-      <nav className="flex-1 space-y-0.5 overflow-y-auto px-2.5 py-2">
+      <nav className="flex-1 space-y-1.5 overflow-y-auto px-3 py-3">
         {NAV_ITEMS.map((item) => {
           const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
           const Icon = item.icon;
@@ -92,16 +92,16 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
               key={item.href}
               href={item.href}
               onClick={onNavigate}
-              className={`group flex items-center gap-3 rounded-lg px-3 py-2.5 text-[0.9rem] font-medium transition-all ${
+              className={`group flex items-center gap-3 rounded-xl border px-3 py-2.5 text-[0.875rem] font-medium transition-all ${
                 active
-                  ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-sm"
-                  : "text-sidebar-foreground/60 hover:bg-sidebar-accent/40 hover:text-sidebar-foreground"
+                  ? "border-sidebar-accent bg-sidebar-accent text-sidebar-accent-foreground shadow-sm"
+                  : "border-sidebar-border/50 bg-sidebar-accent/10 text-sidebar-foreground/60 hover:border-sidebar-border hover:bg-sidebar-accent/30 hover:text-sidebar-foreground"
               }`}
             >
-              <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md ${
-                active ? "bg-background/60" : "bg-sidebar-accent/30 group-hover:bg-sidebar-accent/50"
+              <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${
+                active ? "bg-background/50" : "bg-background/40 group-hover:bg-background/60"
               }`}>
-                <Icon className={`h-[1.05rem] w-[1.05rem] ${active ? item.accent : item.accent} opacity-90`} />
+                <Icon className={`h-4 w-4 ${item.accent}`} />
               </span>
               {t(item.labelKey)}
             </Link>
