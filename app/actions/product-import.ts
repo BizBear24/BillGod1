@@ -2,7 +2,7 @@
 
 import { eq, and } from "drizzle-orm";
 import { getDb } from "@/db/client";
-import { products, categories, brands, units, sizes, colors, hsnCodes, taxRates } from "@/db/schema";
+import { products, categories, brands, units, sizes, colors, hsnCodes, taxRates, productImages } from "@/db/schema";
 import { requireSessionUser, getActiveMembership } from "@/lib/auth/session";
 import { can, PERMISSIONS } from "@/lib/auth/permissions";
 import { logAudit } from "@/lib/audit";
@@ -120,7 +120,72 @@ type ParsedRow = {
   name: string;
   values: Record<string, unknown>;
   warnings: string[];
+  /** A data: URI ready to store, or null when there's nothing to import (or, during a preview, nothing to fetch yet). */
+  imageDataUrl: string | null;
 };
+
+/** Comfortably above what a compressed product photo needs, and matches the cap `setProductImage` enforces on manual uploads. */
+const MAX_IMAGE_BYTES = 500_000;
+
+/**
+ * A picture actually dropped over the row wins outright — it's already in
+ * hand, no network round trip, no broken-link risk. The URL column is the
+ * fallback for a shop pointing at photos it already has hosted somewhere.
+ * A preview never fetches: it only says what importing would do, so a
+ * hundred-row file doesn't turn "Preview" into a hundred HTTP requests.
+ */
+async function resolveRowImage(
+  embedded: { buffer: Buffer; extension: string } | undefined,
+  url: string,
+  dryRun: boolean,
+  warnings: string[]
+): Promise<string | null> {
+  if (embedded) {
+    if (dryRun) {
+      warnings.push("Photo will be imported from the picture in this row.");
+      return null;
+    }
+    if (embedded.buffer.length > MAX_IMAGE_BYTES) {
+      warnings.push(`The picture in this row is too large (${Math.round(embedded.buffer.length / 1024)}KB) — skipped, kept the rest of the row.`);
+      return null;
+    }
+    return `data:image/${embedded.extension};base64,${embedded.buffer.toString("base64")}`;
+  }
+
+  if (!url) return null;
+  if (!/^https?:\/\//i.test(url)) {
+    warnings.push(`Photo link "${url}" isn't a web address (http:// or https://) — skipped.`);
+    return null;
+  }
+  if (dryRun) {
+    warnings.push("Photo will be downloaded from that link when imported.");
+    return null;
+  }
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10_000);
+    const response = await fetch(url, { signal: controller.signal }).finally(() => clearTimeout(timeout));
+    if (!response.ok) {
+      warnings.push(`Could not download the photo link (server said ${response.status}) — skipped.`);
+      return null;
+    }
+    const contentType = response.headers.get("content-type") ?? "";
+    if (!contentType.startsWith("image/")) {
+      warnings.push("That link didn't point to an image — skipped.");
+      return null;
+    }
+    const bytes = await response.arrayBuffer();
+    if (bytes.byteLength > MAX_IMAGE_BYTES) {
+      warnings.push(`The photo at that link is too large (${Math.round(bytes.byteLength / 1024)}KB) — skipped.`);
+      return null;
+    }
+    return `data:${contentType};base64,${Buffer.from(bytes).toString("base64")}`;
+  } catch {
+    warnings.push("Could not download the photo link — skipped.");
+    return null;
+  }
+}
 
 type ParseResult = {
   sheetName: string;
@@ -143,7 +208,7 @@ async function parseFile(
   mode: { createMissingMasters: boolean; dryRun: boolean }
 ): Promise<ParseResult> {
   const { readSpreadsheet } = await import("@/lib/import/spreadsheet");
-  const { headers, rows, sheetName } = await readSpreadsheet(Buffer.from(base64, "base64"), fileName);
+  const { headers, rows, sheetName, rowImages } = await readSpreadsheet(Buffer.from(base64, "base64"), fileName);
 
   const mapping = mapColumns(headers);
   if (mapping.missingRequired.length > 0) {
@@ -299,6 +364,7 @@ async function parseFile(
         trackExpiry: booleanOr("trackExpiry", "Track Expiry"),
         trackSerial: booleanOr("trackSerial", "Track Serial"),
       },
+      imageDataUrl: await resolveRowImage(rowImages.get(i), parseText(cell(row, "imageUrl")), mode.dryRun, warnings),
     });
   }
 
@@ -413,15 +479,25 @@ export async function commitProductImport(
         };
 
         const existingId = idByCode.get(key(entry.itemCode));
+        let productId: string;
         if (existingId) {
           await tx
             .update(products)
             .set({ ...dbValues, updatedAt: new Date() })
             .where(and(eq(products.id, existingId), eq(products.businessId, businessId)));
+          productId = existingId;
           updated += 1;
         } else {
-          await tx.insert(products).values(dbValues);
+          const [created_] = await tx.insert(products).values(dbValues).returning();
+          productId = created_.id;
           created += 1;
+        }
+
+        if (entry.imageDataUrl) {
+          await tx
+            .insert(productImages)
+            .values({ productId, businessId, dataUrl: entry.imageDataUrl, updatedAt: new Date() })
+            .onConflictDoUpdate({ target: productImages.productId, set: { dataUrl: entry.imageDataUrl, updatedAt: new Date() } });
         }
       }
     });

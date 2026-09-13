@@ -31,7 +31,8 @@ export type ProductColumnKey =
   | "reorderLevel"
   | "trackBatch"
   | "trackExpiry"
-  | "trackSerial";
+  | "trackSerial"
+  | "imageUrl";
 
 export type ProductColumnSpec = {
   key: ProductColumnKey;
@@ -67,6 +68,8 @@ export const PRODUCT_COLUMNS: ProductColumnSpec[] = [
   { key: "trackBatch", heading: "Track Batch", aliases: ["batch", "batch tracking"], kind: "boolean", note: "Yes / No." },
   { key: "trackExpiry", heading: "Track Expiry", aliases: ["expiry", "expiry tracking"], kind: "boolean", note: "Yes / No." },
   { key: "trackSerial", heading: "Track Serial", aliases: ["serial", "serial tracking", "imei"], kind: "boolean", note: "Yes / No." },
+  { key: "imageUrl", heading: "Photo", aliases: ["image", "image url", "photo url", "picture", "picture url", "img"], kind: "text",
+    note: "Either paste a direct link to a hosted photo (https://...), or drag an actual picture on top of this cell in Excel — both work, and the picture wins if a row has both." },
 ];
 
 /** Lower-cased, stripped of spaces, underscores, dots and dashes. */
@@ -138,6 +141,6 @@ export function parseText(raw: unknown): string {
 
 /** One example row for the downloadable template, so the format is self-explaining. */
 export const TEMPLATE_EXAMPLE_ROWS: (string | number)[][] = [
-  ["SKU-0001", "Blue Cotton Shirt", "Full sleeve, regular fit", "Apparel", "Raymond", "Piece", "M", "Blue", "6205", 5, "8901234567890", 400, 1000, 1200, 900, 25, 5, 10, "No", "No", "No"],
-  ["SKU-0002", "55 inch LED TV", "", "Electronics", "Sony", "Piece", "", "", "8528", 18, "", 30000, 45000, 50000, "", 3, 1, 2, "No", "No", "Yes"],
+  ["SKU-0001", "Blue Cotton Shirt", "Full sleeve, regular fit", "Apparel", "Raymond", "Piece", "M", "Blue", "6205", 5, "8901234567890", 400, 1000, 1200, 900, 25, 5, 10, "No", "No", "No", "https://example.com/photos/blue-shirt.jpg"],
+  ["SKU-0002", "55 inch LED TV", "", "Electronics", "Sony", "Piece", "", "", "8528", 18, "", 30000, 45000, 50000, "", 3, 1, 2, "No", "No", "Yes", ""],
 ];
