@@ -23,6 +23,7 @@ import {
 import { getSalesDocReport, getPurchaseDocReport, getStockReport, getGstReport, exportWorkbook } from "@/app/actions/reports";
 import { SALE_DOC_TYPES, SALE_DOC_TYPE_LABELS } from "@/lib/validation/sales";
 import { PURCHASE_DOC_TYPES, PURCHASE_DOC_TYPE_LABELS } from "@/lib/validation/purchases";
+import { TrendLineChart, RankedBarChart, TwoSeriesBarChart, SERIES_ORANGE } from "@/components/app/report-charts";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
@@ -293,6 +294,15 @@ export function ReportsManager({ initialSalesReport }: { initialSalesReport: Sal
                   ])}
                   emptyLabel="No products yet."
                 />
+                <Card>
+                  <CardContent className="space-y-3 py-4">
+                    <p className="text-sm font-semibold">Top products by stock value</p>
+                    <RankedBarChart
+                      data={stockReport.rows.slice(0, 8).map((r) => ({ key: r.id, label: r.name, total: r.stockValue, count: r.quantity }))}
+                      formatValue={money}
+                    />
+                  </CardContent>
+                </Card>
                 <BatchValuationTable rows={stockReport.rows} />
               </>
             )}
@@ -314,6 +324,12 @@ export function ReportsManager({ initialSalesReport }: { initialSalesReport: Sal
                   Rate-wise working summaries to reconcile a GSTR-1 / GSTR-3B filing against. B2B and B2C are split on whether the customer has a
                   GSTIN on file. Government filing formats (JSON/offline utility) are not generated.
                 </p>
+                <Card>
+                  <CardContent className="space-y-3 py-4">
+                    <p className="text-sm font-semibold">Output tax vs input tax, by rate</p>
+                    <TwoSeriesBarChart data={gstRateComparison(gstReport)} labelA="Output tax" labelB="Input tax" />
+                  </CardContent>
+                </Card>
                 <ReportTable
                   title="Outward supplies (sales)"
                   exportName={`gst-outward-${from}-to-${to}`}
@@ -409,11 +425,16 @@ function SalesDocReportView({
         ])}
         emptyLabel={`No ${label.toLowerCase()} documents in this period.`}
       />
-      <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
+      <Card>
+        <CardContent className="space-y-3 py-4">
+          <p className="text-sm font-semibold">Daily trend</p>
+          <TrendLineChart data={dayPoints(report.byDay)} formatValue={money} />
+        </CardContent>
+      </Card>
+      <div className="grid gap-4 lg:grid-cols-3">
         <BreakdownCard title="Salesperson-wise" rows={report.bySalesperson} />
         <BreakdownCard title="Branch-wise" rows={report.byBranch} />
         <BreakdownCard title="Counter-wise" rows={report.byCounter} />
-        <BreakdownCard title="Day-wise" rows={report.byDay} />
       </div>
     </>
   );
@@ -469,9 +490,37 @@ function PurchaseDocReportView({
         ])}
         emptyLabel={`No ${label.toLowerCase()} documents in this period.`}
       />
+      <Card>
+        <CardContent className="space-y-3 py-4">
+          <p className="text-sm font-semibold">Daily trend</p>
+          <TrendLineChart data={dayPoints(report.byDay)} color={SERIES_ORANGE} formatValue={money} />
+        </CardContent>
+      </Card>
       <BreakdownCard title="Supplier-wise" rows={report.bySupplier} />
     </>
   );
+}
+
+/** `2026-09-12` → a short axis label ("12 Sep"), same date the tooltip shows. */
+function dayPoints(rows: { key: string; label: string; total: number }[]) {
+  return rows.map((r) => {
+    const [, month, day] = r.key.split("-");
+    const monthName = MONTH_SHORT[parseInt(month, 10) - 1] ?? month;
+    return { key: r.key, label: `${day} ${monthName}`, total: r.total };
+  });
+}
+const MONTH_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** Outward and inward each list only the rates they actually saw — this unions them so a rate with only one side still gets its own row. */
+function gstRateComparison(report: GstReport) {
+  const rates = new Set<number>([...report.outward.map((r) => r.ratePercent), ...report.inward.map((r) => r.ratePercent)]);
+  return [...rates]
+    .sort((a, b) => a - b)
+    .map((rate) => ({
+      ratePercent: rate,
+      a: report.outward.find((r) => r.ratePercent === rate)?.taxAmount ?? 0,
+      b: report.inward.find((r) => r.ratePercent === rate)?.taxAmount ?? 0,
+    }));
 }
 
 function SummaryStrip({ items }: { items: { label: string; value: string }[] }) {
@@ -627,21 +676,7 @@ function BreakdownCard({ title, rows }: { title: string; rows: { key: string; la
     <Card>
       <CardContent className="space-y-3 py-4">
         <p className="text-sm font-semibold">{title}</p>
-        {rows.length === 0 ? (
-          <p className="py-4 text-center text-sm text-muted-foreground">No data.</p>
-        ) : (
-          <Table>
-            <TableBody>
-              {rows.map((r) => (
-                <TableRow key={r.key}>
-                  <TableCell>{r.label}</TableCell>
-                  <TableCell className="text-right text-muted-foreground">{r.count}</TableCell>
-                  <TableCell className="text-right font-medium">{money(r.total)}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
+        <RankedBarChart data={rows} formatValue={money} />
       </CardContent>
     </Card>
   );

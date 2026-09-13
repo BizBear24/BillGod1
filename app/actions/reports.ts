@@ -202,6 +202,12 @@ export async function getPurchaseDocReport(docType: PurchaseDocType, range: { fr
       (r) => r.supplierName,
       (r) => parseFloat(r.totalAmount)
     ),
+    byDay: groupSum(
+      rows,
+      (r) => toDateKey(new Date(r.createdAt)),
+      (r) => toDateKey(new Date(r.createdAt)),
+      (r) => parseFloat(r.totalAmount)
+    ).sort((a, b) => a.key.localeCompare(b.key)),
   };
 }
 
