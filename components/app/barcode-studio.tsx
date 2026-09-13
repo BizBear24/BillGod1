@@ -298,13 +298,22 @@ function LabelSheet({
       </Card>
 
       {/* Drawn in real millimetres so a 50 mm label measures 50 mm on paper,
-          by the same component the designer previews with. */}
-      <div ref={sheetRef}>
+          by the same component the designer previews with.
+          `padding` here is the sheet's own safe margin: almost no printer can
+          mark all the way to the physical edge of the page, and @page's own
+          margin is 0 (see browser-print-service.ts) so an unmarked label grid
+          would start flush at that edge — reliably fine in a browser's own
+          rendering, then clipped or auto-shrunk by the printer driver once it
+          hits real paper, which reads as "the label sizes are off in print."
+          Centering the grid with `margin: 0 auto` means it stays centered
+          however wide the actual printable area turns out to be. */}
+      <div ref={sheetRef} style={{ padding: "5mm", boxSizing: "border-box" }}>
         <div
           className="flex flex-wrap"
           style={{
             gap: `${design.gapMm}mm`,
             width: `${design.columns * design.widthMm + (design.columns - 1) * design.gapMm}mm`,
+            margin: "0 auto",
           }}
         >
           {labels.map((label) => (
@@ -384,7 +393,7 @@ function SequenceSheet() {
         </CardContent>
       </Card>
 
-      <div ref={sheetRef}>
+      <div ref={sheetRef} style={{ padding: "5mm", boxSizing: "border-box" }}>
         <div className="flex flex-wrap gap-2">
           {values.map((value) => (
             <div key={value} className="flex flex-col items-center border border-dashed border-border p-1">

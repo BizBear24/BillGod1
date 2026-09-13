@@ -316,7 +316,7 @@ export function CatalogueModule({
             </div>
             <div className="flex gap-2">
               <Button disabled={selected.size === 0 || building} onClick={() => void buildSheet()}>
-                {building ? "Loading photos…" : "Build catalogue sheet"}
+                {building ? "Loading photos…" : "Preview catalogue"}
               </Button>
               <Button
                 variant="secondary"
@@ -387,12 +387,25 @@ export function CatalogueModule({
         </CardContent>
       </Card>
 
-      {/* -------------------------------------------------------- the sheet */}
+      {/* -------------------------------------------------------------- preview */}
+      <Card className="print:hidden">
+        <CardContent className="flex items-center justify-between py-4">
+          <div>
+            <p className="text-sm font-semibold">Preview</p>
+            <p className="text-xs text-muted-foreground">Exactly what will print or save as a PDF — nothing changes between this and the sheet.</p>
+          </div>
+          {built && selectedProducts.length > 0 && (
+            <Badge variant="secondary">
+              {selectedProducts.length} product{selectedProducts.length === 1 ? "" : "s"} on sheet
+            </Badge>
+          )}
+        </CardContent>
+      </Card>
       <div ref={sheetRef} className="rounded-lg border border-border bg-background p-4">
         {companyName && <h2 className="mb-3 text-center text-xl font-bold">{companyName}</h2>}
         {!built || selectedProducts.length === 0 ? (
           <p className="py-10 text-center text-sm text-muted-foreground print:hidden">
-            Select products above and click &quot;Build catalogue sheet&quot; to preview it here.
+            Select products above and click &quot;Preview catalogue&quot; to see it here.
           </p>
         ) : (
           <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}>
