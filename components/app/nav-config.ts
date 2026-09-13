@@ -12,6 +12,7 @@ import {
   Gift,
   MessageSquare,
   Settings,
+  GalleryHorizontalEnd,
   type LucideIcon,
 } from "lucide-react";
 import { PERMISSIONS, type PermissionKey } from "@/lib/auth/permissions";
@@ -37,6 +38,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/accounting",     labelKey: "nav.accounting",     label: "Accounting",     icon: Calculator,      accent: "text-teal-500",    permission: PERMISSIONS.ACCOUNTS_VIEW },
   { href: "/reports",        labelKey: "nav.reports",        label: "Reports",        icon: BarChart3,       accent: "text-indigo-500",  permission: PERMISSIONS.REPORTS_VIEW },
   { href: "/barcodes",       labelKey: "nav.barcodes",       label: "Barcodes",       icon: Barcode,         accent: "text-pink-500",    permission: PERMISSIONS.PRODUCTS_VIEW },
+  { href: "/catalogue",      labelKey: "nav.catalogue",      label: "Catalogue",      icon: GalleryHorizontalEnd, accent: "text-violet-400", permission: PERMISSIONS.PRODUCTS_VIEW },
   { href: "/loyalty",        labelKey: "nav.loyalty",        label: "Loyalty",        icon: Gift,            accent: "text-fuchsia-500" },
   { href: "/communications", labelKey: "nav.communications", label: "Communications", icon: MessageSquare,   accent: "text-lime-500" },
   // Every role can reach Settings for their own profile/password even without SETTINGS_VIEW; company/team management inside is gated per-section.

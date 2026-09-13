@@ -23,6 +23,7 @@ import { loyaltyTierSchema, couponSchema } from "@/lib/validation/engagement";
 import { NONE } from "@/lib/validation/common";
 import { createMasterValue } from "@/app/actions/masters";
 import { INLINE_MASTER_LABELS, type InlineMasterKind } from "@/lib/masters/inline";
+import { ProductPhotoIcon } from "@/components/app/product-photo-icon";
 
 /**
  * Icons and Zod schemas are functions/class instances, which the RSC boundary
@@ -81,11 +82,13 @@ export type CrudColumn<T> = {
   key: Extract<keyof T, string>;
   label: string;
   className?: string;
-  format?: "currency" | "lookup" | "swatch";
+  format?: "currency" | "lookup" | "swatch" | "photo";
   /** format "lookup": maps the raw cell value to a display label. */
   lookup?: Record<string, string>;
   /** format "swatch": key of the field holding a hex color. */
   swatchKey?: Extract<keyof T, string>;
+  /** format "photo": key holding the row's name, for the lightbox title. */
+  nameKey?: Extract<keyof T, string>;
 };
 
 type ActionResult = { ok: true } | { ok: false; error: string };
@@ -256,7 +259,7 @@ function formValuesFor(fields: CrudField[], row: Record<string, unknown>): Recor
   return out;
 }
 
-function renderCell<T extends Record<string, unknown>>(item: T, column: CrudColumn<T>): React.ReactNode {
+function renderCell<T extends Record<string, unknown> & { id: string }>(item: T, column: CrudColumn<T>): React.ReactNode {
   const raw = item[column.key];
   if (column.format === "currency") {
     const value = typeof raw === "number" ? raw : parseFloat(String(raw ?? "0"));
@@ -273,6 +276,11 @@ function renderCell<T extends Record<string, unknown>>(item: T, column: CrudColu
         {String(raw ?? "—")}
       </div>
     );
+  }
+  if (column.format === "photo") {
+    if (!raw) return <span className="text-muted-foreground">—</span>;
+    const name = column.nameKey ? String(item[column.nameKey] ?? "") : "";
+    return <ProductPhotoIcon productId={item.id} productName={name} />;
   }
   return String(raw ?? "—");
 }

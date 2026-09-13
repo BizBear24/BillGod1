@@ -5,6 +5,7 @@ import { requireSessionUser, getActiveMembership } from "@/lib/auth/session";
 import { can, PERMISSIONS } from "@/lib/auth/permissions";
 import { getBillingPageData, listReturnableSales } from "@/app/actions/sales";
 import { getDefaultDesigns } from "@/app/actions/print-templates";
+import { getProductImageIds } from "@/app/actions/products";
 import { BillingPos } from "@/components/app/billing-pos";
 import { Card, CardContent } from "@/components/ui/card";
 
@@ -22,7 +23,12 @@ export default async function BillingPage() {
   const db = await getDb();
   const companyRows = await db.select().from(companies).where(eq(companies.businessId, membership.businessId)).limit(1);
 
-  const [data, returnableSales, defaults] = await Promise.all([getBillingPageData(), listReturnableSales(), getDefaultDesigns()]);
+  const [data, returnableSales, defaults, imageProductIds] = await Promise.all([
+    getBillingPageData(),
+    listReturnableSales(),
+    getDefaultDesigns(),
+    getProductImageIds(),
+  ]);
 
   return (
     <div className="space-y-6">
@@ -48,6 +54,7 @@ export default async function BillingPage() {
         canManage={data.canManage}
         company={companyRows[0] ?? null}
         invoiceDesign={defaults.invoice}
+        imageProductIds={imageProductIds}
       />
     </div>
   );

@@ -1,14 +1,16 @@
+import Link from "next/link";
 import { eq, and, desc } from "drizzle-orm";
+import { GalleryHorizontalEnd } from "lucide-react";
 import { getDb } from "@/db/client";
 import { products, companies, sales, customers } from "@/db/schema";
 import { requireSessionUser, getActiveMembership } from "@/lib/auth/session";
 import { can, PERMISSIONS } from "@/lib/auth/permissions";
 import { getInvoiceData } from "@/app/actions/sales";
 import { getPurchaseWithItems } from "@/app/actions/purchases";
-import { getProductImageIds } from "@/app/actions/products";
 import { getPrintTemplates, getDefaultDesigns } from "@/app/actions/print-templates";
 import { BarcodeStudio } from "@/components/app/barcode-studio";
 import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 
 export default async function BarcodesPage({
   searchParams,
@@ -58,18 +60,23 @@ export default async function BarcodesPage({
 
   // Render the first bill on the server so the invoice tab has something to
   // show immediately instead of fetching on mount.
-  const [initialInvoice, templates, defaults, imageProductIds] = await Promise.all([
+  const [initialInvoice, templates, defaults] = await Promise.all([
     saleRows[0] ? getInvoiceData(saleRows[0].id) : Promise.resolve(null),
     getPrintTemplates(),
     getDefaultDesigns(),
-    getProductImageIds(),
   ]);
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold">Barcodes &amp; Printing</h1>
-        <p className="text-muted-foreground">Generate barcode labels, bulk sequences and printable invoices.</p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-3xl font-bold">Barcodes &amp; Printing</h1>
+          <p className="text-muted-foreground">Generate barcode labels, bulk sequences and printable invoices.</p>
+        </div>
+        <Button variant="secondary" nativeButton={false} render={<Link href="/catalogue" />}>
+          <GalleryHorizontalEnd className="h-4 w-4" />
+          Build a product catalogue
+        </Button>
       </div>
       <BarcodeStudio
         products={productRows}
@@ -82,7 +89,6 @@ export default async function BarcodesPage({
         defaultInvoice={defaults.invoice}
         canDesign={templates.canManage}
         initialLabelSelection={initialLabelSelection.length > 0 ? initialLabelSelection : undefined}
-        imageProductIds={imageProductIds}
       />
     </div>
   );

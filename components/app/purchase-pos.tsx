@@ -20,6 +20,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CancelDocDialog } from "@/components/app/cancel-doc-dialog";
 import { useActiveWarehouse } from "@/lib/active-branch";
+import { ProductPhotoIcon } from "@/components/app/product-photo-icon";
 
 type Product = {
   id: string;
@@ -78,6 +79,7 @@ export function PurchasePos({
   canManage,
   company,
   invoiceDesign,
+  imageProductIds,
 }: {
   businessId: string;
   products: Product[];
@@ -90,8 +92,11 @@ export function PurchasePos({
   canManage: boolean;
   company: InvoiceCompany | null;
   invoiceDesign: InvoiceDesign;
+  /** Which products have a photo on file — the camera badge only ever shows up for these. */
+  imageProductIds: string[];
 }) {
   const router = useRouter();
+  const hasImage = React.useMemo(() => new Set(imageProductIds), [imageProductIds]);
   const [search, setSearch] = React.useState("");
   const [cart, setCart] = React.useState<CartLine[]>([]);
   const [docType, setDocType] = React.useState<(typeof PURCHASE_DOC_TYPES)[number]>("purchase");
@@ -390,12 +395,20 @@ export function PurchasePos({
             </div>
             <div className="grid gap-2 sm:grid-cols-2">
               {filtered.map((p) => (
-                <button
+                <div
                   key={p.id}
-                  type="button"
+                  role="button"
+                  tabIndex={0}
                   onClick={() => addProduct(p)}
-                  className="flex items-center justify-between rounded-lg border border-border px-3 py-2 text-left text-sm transition-colors hover:border-primary/40 hover:bg-accent/40"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      addProduct(p);
+                    }
+                  }}
+                  className="relative flex cursor-pointer items-center justify-between rounded-lg border border-border px-3 py-2 text-left text-sm transition-colors hover:border-primary/40 hover:bg-accent/40"
                 >
+                  {hasImage.has(p.id) && <ProductPhotoIcon productId={p.id} productName={p.name} className="absolute -left-1.5 -top-1.5" />}
                   <div className="min-w-0">
                     <p className="truncate font-medium">{p.name}</p>
                     <p className="text-xs text-muted-foreground">{p.itemCode}</p>
@@ -403,7 +416,7 @@ export function PurchasePos({
                   <Badge variant="secondary" className="shrink-0">
                     {money(parseFloat(p.purchasePrice) || 0)}
                   </Badge>
-                </button>
+                </div>
               ))}
               {filtered.length === 0 && <p className="col-span-2 py-6 text-center text-sm text-muted-foreground">No products match.</p>}
             </div>

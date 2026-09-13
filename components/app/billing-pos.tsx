@@ -10,6 +10,7 @@ import { SALE_DOC_TYPES, SALE_DOC_TYPE_LABELS, SALE_PAYMENT_METHODS, SALE_PAYMEN
 import { computeSaleTotals, round2 } from "@/lib/sales/totals";
 import { resolveTier, type TierRow } from "@/lib/loyalty/tiers";
 import { useActiveWarehouse } from "@/lib/active-branch";
+import { ProductPhotoIcon } from "@/components/app/product-photo-icon";
 import { InvoiceDocument, type InvoiceCompany } from "@/components/app/invoice-document";
 import { getPrintService, type PrintFormat } from "@/lib/print";
 import type { InvoiceDesign } from "@/lib/print/templates";
@@ -94,6 +95,7 @@ export function BillingPos({
   canManage,
   company,
   invoiceDesign,
+  imageProductIds,
 }: {
   businessId: string;
   products: Product[];
@@ -114,6 +116,8 @@ export function BillingPos({
   canManage: boolean;
   company: InvoiceCompany | null;
   invoiceDesign: InvoiceDesign;
+  /** Which products have a photo on file — the camera badge only ever shows up for these. */
+  imageProductIds: string[];
 }) {
   const router = useRouter();
   const [search, setSearch] = React.useState("");
@@ -122,6 +126,7 @@ export function BillingPos({
   const [customerId, setCustomerId] = React.useState("walkin");
   const [salespersonId, setSalespersonId] = React.useState("none");
   const [warehouseId, setWarehouseId] = useActiveWarehouse(businessId, warehouses);
+  const hasImage = React.useMemo(() => new Set(imageProductIds), [imageProductIds]);
   const [counterId, setCounterId] = React.useState(counters.find((c) => c.isDefault)?.id ?? counters[0]?.id ?? "none");
   const [originalSaleId, setOriginalSaleId] = React.useState("none");
   const [notes, setNotes] = React.useState("");
@@ -491,11 +496,18 @@ export function BillingPos({
                 const isOut = stock <= 0;
                 const isLow = !isOut && stock <= 10;
                 return (
-                  <button
+                  <div
                     key={p.id}
-                    type="button"
+                    role="button"
+                    tabIndex={0}
                     onClick={() => addProduct(p)}
-                    className={`flex items-center justify-between rounded-xl border px-3 py-2.5 text-left text-sm transition-colors ${
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        addProduct(p);
+                      }
+                    }}
+                    className={`relative flex cursor-pointer items-center justify-between rounded-xl border px-3 py-2.5 text-left text-sm transition-colors ${
                       isOut
                         ? "border-destructive/40 bg-destructive/10 opacity-70 hover:bg-destructive/15"
                         : isLow
@@ -503,6 +515,9 @@ export function BillingPos({
                           : "border-border hover:border-primary/40 hover:bg-accent/40"
                     }`}
                   >
+                    {hasImage.has(p.id) && (
+                      <ProductPhotoIcon productId={p.id} productName={p.name} className="absolute -left-1.5 -top-1.5" />
+                    )}
                     <div className="min-w-0">
                       <p className="truncate font-medium">{p.name}</p>
                       <p className="text-xs text-muted-foreground">{p.itemCode}</p>
@@ -512,7 +527,7 @@ export function BillingPos({
                     <Badge variant="secondary" className="shrink-0 ml-2">
                       {money(parseFloat(p.sellingPrice) || 0)}
                     </Badge>
-                  </button>
+                  </div>
                 );
               })}
               {filtered.length === 0 && <p className="col-span-2 py-6 text-center text-sm text-muted-foreground">No products match.</p>}

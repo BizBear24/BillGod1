@@ -5,6 +5,7 @@ import { requireSessionUser, getActiveMembership } from "@/lib/auth/session";
 import { can, PERMISSIONS } from "@/lib/auth/permissions";
 import { getPurchasesPageData } from "@/app/actions/purchases";
 import { getDefaultDesigns } from "@/app/actions/print-templates";
+import { getProductImageIds } from "@/app/actions/products";
 import { PurchasePos } from "@/components/app/purchase-pos";
 import { Card, CardContent } from "@/components/ui/card";
 
@@ -22,7 +23,7 @@ export default async function PurchasePage() {
   const db = await getDb();
   const companyRows = await db.select().from(companies).where(eq(companies.businessId, membership.businessId)).limit(1);
 
-  const [data, defaults] = await Promise.all([getPurchasesPageData(), getDefaultDesigns()]);
+  const [data, defaults, imageProductIds] = await Promise.all([getPurchasesPageData(), getDefaultDesigns(), getProductImageIds()]);
 
   return (
     <div className="space-y-6">
@@ -42,6 +43,7 @@ export default async function PurchasePage() {
         canManage={data.canManage}
         company={companyRows[0] ?? null}
         invoiceDesign={defaults.invoice}
+        imageProductIds={imageProductIds}
       />
     </div>
   );

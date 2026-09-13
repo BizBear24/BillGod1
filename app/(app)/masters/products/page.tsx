@@ -23,6 +23,8 @@ export default async function ProductsPage() {
   const hsnOptions = [NONE, ...data.hsnCodes.map((h) => ({ value: h.id, label: h.code }))];
   const taxRateOptions = [NONE, ...data.taxRates.map((t) => ({ value: t.id, label: `${t.name} (${t.ratePercent}%)` }))];
   const categoryLookup = Object.fromEntries(data.categories.map((c) => [c.id, c.name]));
+  const imageIdSet = new Set(imageProductIds);
+  const productRows = data.products.map((p) => ({ ...p, _hasImage: imageIdSet.has(p.id) }));
 
   const fields: CrudField[] = [
     { name: "itemCode", label: "Item Code", type: "text", placeholder: "e.g. SKU-0001" },
@@ -66,8 +68,9 @@ export default async function ProductsPage() {
       <EntityCrudManager
         title="Products"
         kind="product"
-        items={data.products}
+        items={productRows}
         columns={[
+          { key: "_hasImage", label: "Photo", format: "photo", nameKey: "name" },
           { key: "itemCode", label: "Item Code" },
           { key: "name", label: "Name" },
           { key: "categoryId", label: "Category", format: "lookup", lookup: categoryLookup },

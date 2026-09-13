@@ -5,6 +5,7 @@ import { getDb } from "@/db/client";
 import {
   sales,
   saleItems,
+  salePayments,
   purchases,
   purchaseItems,
   customers,
@@ -20,6 +21,7 @@ import { valueStock } from "@/lib/inventory/valuation";
 import { listWarehousesForBusiness, listCountersForBusiness } from "./org";
 import type { CreateSaleInput } from "@/lib/validation/sales";
 import type { CreatePurchaseInput } from "@/lib/validation/purchases";
+import { SALE_PAYMENT_METHOD_LABELS } from "@/lib/validation/sales";
 
 export type SaleDocType = CreateSaleInput["docType"];
 export type PurchaseDocType = CreatePurchaseInput["docType"];
@@ -102,6 +104,15 @@ export async function getSalesDocReport(docType: SaleDocType, range: { from: str
   const warehouseLabel = new Map(warehouseRows.map((w) => [w.id, w.label]));
   const counterLabel = new Map(counterRows.map((c) => [c.id, c.label]));
 
+  // Only a completed sale/return ever collects payment, so every other doc
+  // type simply has none to group — the pie renders empty rather than erroring.
+  const paymentRows = rows.length
+    ? await db
+        .select({ method: salePayments.method, amount: salePayments.amount })
+        .from(salePayments)
+        .where(inArray(salePayments.saleId, rows.map((r) => r.id)))
+    : [];
+
   const summary = rows.reduce(
     (acc, r) => ({
       subtotal: round2(acc.subtotal + parseFloat(r.subtotal)),
@@ -145,6 +156,12 @@ export async function getSalesDocReport(docType: SaleDocType, range: { from: str
       (r) => toDateKey(new Date(r.createdAt)),
       (r) => parseFloat(r.totalAmount)
     ).sort((a, b) => a.key.localeCompare(b.key)),
+    byPaymentMethod: groupSum(
+      paymentRows,
+      (r) => r.method,
+      (r) => SALE_PAYMENT_METHOD_LABELS[r.method],
+      (r) => parseFloat(r.amount)
+    ),
   };
 }
 

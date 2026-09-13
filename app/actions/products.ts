@@ -1,6 +1,6 @@
 "use server";
 
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, and, inArray, sql } from "drizzle-orm";
 import { getDb } from "@/db/client";
 import {
   products,
@@ -14,6 +14,8 @@ import {
   hsnCodes,
   taxRates,
   productImages,
+  stockMovements,
+  companies,
 } from "@/db/schema";
 import { requireSessionUser, getActiveMembership } from "@/lib/auth/session";
 import { can, PERMISSIONS } from "@/lib/auth/permissions";
@@ -230,4 +232,50 @@ export async function setProductImage(productId: string, dataUrl: string | null)
     .values({ productId, businessId: gate.membership.businessId, dataUrl, updatedAt: new Date() })
     .onConflictDoUpdate({ target: productImages.productId, set: { dataUrl, updatedAt: new Date() } });
   return { ok: true };
+}
+
+/** Everything the Catalogue module needs: products with their category/brand, current stock, which ones have a photo, and the shop's own name for the sheet header. */
+export async function getCataloguePageData() {
+  const sessionUser = await requireSessionUser();
+  const membership = await getActiveMembership(sessionUser);
+  if (!membership || !can(membership.role, PERMISSIONS.PRODUCTS_VIEW)) throw new Error("FORBIDDEN");
+
+  const db = await getDb();
+  const businessId = membership.businessId;
+
+  const [productRows, categoryRows, brandRows, stockRows, imageRows, companyRows] = await Promise.all([
+    db
+      .select({
+        id: products.id,
+        itemCode: products.itemCode,
+        name: products.name,
+        categoryId: products.categoryId,
+        brandId: products.brandId,
+        sellingPrice: products.sellingPrice,
+        mrp: products.mrp,
+        isActive: products.isActive,
+      })
+      .from(products)
+      .where(and(eq(products.businessId, businessId), eq(products.isActive, true))),
+    db.select({ id: categories.id, name: categories.name }).from(categories).where(eq(categories.businessId, businessId)),
+    db.select({ id: brands.id, name: brands.name }).from(brands).where(eq(brands.businessId, businessId)),
+    db
+      .select({ productId: stockMovements.productId, total: sql<string>`sum(${stockMovements.quantity})` })
+      .from(stockMovements)
+      .where(eq(stockMovements.businessId, businessId))
+      .groupBy(stockMovements.productId),
+    db.select({ productId: productImages.productId }).from(productImages).where(eq(productImages.businessId, businessId)),
+    db.select({ name: companies.name }).from(companies).where(eq(companies.businessId, businessId)).limit(1),
+  ]);
+
+  const stockByProduct = Object.fromEntries(stockRows.map((r) => [r.productId, parseFloat(r.total ?? "0")]));
+
+  return {
+    products: productRows,
+    categories: categoryRows,
+    brands: brandRows,
+    stockByProduct,
+    imageProductIds: imageRows.map((r) => r.productId),
+    companyName: companyRows[0]?.name ?? null,
+  };
 }

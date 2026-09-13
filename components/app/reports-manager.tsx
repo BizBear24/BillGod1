@@ -24,6 +24,7 @@ import { getSalesDocReport, getPurchaseDocReport, getStockReport, getGstReport, 
 import { SALE_DOC_TYPES, SALE_DOC_TYPE_LABELS } from "@/lib/validation/sales";
 import { PURCHASE_DOC_TYPES, PURCHASE_DOC_TYPE_LABELS } from "@/lib/validation/purchases";
 import { TrendLineChart, RankedBarChart, TwoSeriesBarChart, SERIES_ORANGE } from "@/components/app/report-charts";
+import { DonutChart } from "@/components/app/report-pies";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
@@ -294,15 +295,26 @@ export function ReportsManager({ initialSalesReport }: { initialSalesReport: Sal
                   ])}
                   emptyLabel="No products yet."
                 />
-                <Card>
-                  <CardContent className="space-y-3 py-4">
-                    <p className="text-sm font-semibold">Top products by stock value</p>
-                    <RankedBarChart
-                      data={stockReport.rows.slice(0, 8).map((r) => ({ key: r.id, label: r.name, total: r.stockValue, count: r.quantity }))}
-                      formatValue={money}
-                    />
-                  </CardContent>
-                </Card>
+                <div className="grid gap-4 lg:grid-cols-2">
+                  <Card>
+                    <CardContent className="space-y-3 py-4">
+                      <p className="text-sm font-semibold">Top products by stock value</p>
+                      <RankedBarChart
+                        data={stockReport.rows.slice(0, 8).map((r) => ({ key: r.id, label: r.name, total: r.stockValue, count: r.quantity }))}
+                        formatValue={money}
+                      />
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardContent className="space-y-3 py-4">
+                      <p className="text-sm font-semibold">Stock value mix</p>
+                      <DonutChart
+                        data={stockReport.rows.filter((r) => r.stockValue > 0).map((r) => ({ key: r.id, label: r.name, total: r.stockValue }))}
+                        formatValue={money}
+                      />
+                    </CardContent>
+                  </Card>
+                </div>
                 <BatchValuationTable rows={stockReport.rows} />
               </>
             )}
@@ -324,12 +336,23 @@ export function ReportsManager({ initialSalesReport }: { initialSalesReport: Sal
                   Rate-wise working summaries to reconcile a GSTR-1 / GSTR-3B filing against. B2B and B2C are split on whether the customer has a
                   GSTIN on file. Government filing formats (JSON/offline utility) are not generated.
                 </p>
-                <Card>
-                  <CardContent className="space-y-3 py-4">
-                    <p className="text-sm font-semibold">Output tax vs input tax, by rate</p>
-                    <TwoSeriesBarChart data={gstRateComparison(gstReport)} labelA="Output tax" labelB="Input tax" />
-                  </CardContent>
-                </Card>
+                <div className="grid gap-4 lg:grid-cols-2">
+                  <Card>
+                    <CardContent className="space-y-3 py-4">
+                      <p className="text-sm font-semibold">Output tax vs input tax, by rate</p>
+                      <TwoSeriesBarChart data={gstRateComparison(gstReport)} labelA="Output tax" labelB="Input tax" />
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardContent className="space-y-3 py-4">
+                      <p className="text-sm font-semibold">Outward taxable value, by rate</p>
+                      <DonutChart
+                        data={gstReport.outward.map((r) => ({ key: String(r.ratePercent), label: `${r.ratePercent}%`, total: r.taxableValue }))}
+                        formatValue={money}
+                      />
+                    </CardContent>
+                  </Card>
+                </div>
                 <ReportTable
                   title="Outward supplies (sales)"
                   exportName={`gst-outward-${from}-to-${to}`}
@@ -431,10 +454,31 @@ function SalesDocReportView({
           <TrendLineChart data={dayPoints(report.byDay)} formatValue={money} />
         </CardContent>
       </Card>
-      <div className="grid gap-4 lg:grid-cols-3">
-        <BreakdownCard title="Salesperson-wise" rows={report.bySalesperson} />
-        <BreakdownCard title="Branch-wise" rows={report.byBranch} />
-        <BreakdownCard title="Counter-wise" rows={report.byCounter} />
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card>
+          <CardContent className="space-y-3 py-4">
+            <p className="text-sm font-semibold">Salesperson-wise</p>
+            <RankedBarChart data={report.bySalesperson} formatValue={money} />
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="space-y-3 py-4">
+            <p className="text-sm font-semibold">Paid by</p>
+            <DonutChart data={report.byPaymentMethod} formatValue={money} />
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="space-y-3 py-4">
+            <p className="text-sm font-semibold">Branch-wise</p>
+            <DonutChart data={report.byBranch} formatValue={money} />
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="space-y-3 py-4">
+            <p className="text-sm font-semibold">Counter-wise</p>
+            <DonutChart data={report.byCounter} formatValue={money} />
+          </CardContent>
+        </Card>
       </div>
     </>
   );
@@ -490,13 +534,20 @@ function PurchaseDocReportView({
         ])}
         emptyLabel={`No ${label.toLowerCase()} documents in this period.`}
       />
-      <Card>
-        <CardContent className="space-y-3 py-4">
-          <p className="text-sm font-semibold">Daily trend</p>
-          <TrendLineChart data={dayPoints(report.byDay)} color={SERIES_ORANGE} formatValue={money} />
-        </CardContent>
-      </Card>
-      <BreakdownCard title="Supplier-wise" rows={report.bySupplier} />
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card>
+          <CardContent className="space-y-3 py-4">
+            <p className="text-sm font-semibold">Daily trend</p>
+            <TrendLineChart data={dayPoints(report.byDay)} color={SERIES_ORANGE} formatValue={money} />
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="space-y-3 py-4">
+            <p className="text-sm font-semibold">Supplier-wise</p>
+            <DonutChart data={report.bySupplier} formatValue={money} />
+          </CardContent>
+        </Card>
+      </div>
     </>
   );
 }
@@ -666,17 +717,6 @@ function ReportTable({
             </Table>
           </div>
         )}
-      </CardContent>
-    </Card>
-  );
-}
-
-function BreakdownCard({ title, rows }: { title: string; rows: { key: string; label: string; total: number; count: number }[] }) {
-  return (
-    <Card>
-      <CardContent className="space-y-3 py-4">
-        <p className="text-sm font-semibold">{title}</p>
-        <RankedBarChart data={rows} formatValue={money} />
       </CardContent>
     </Card>
   );

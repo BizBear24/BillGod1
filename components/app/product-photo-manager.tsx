@@ -99,7 +99,8 @@ export function ProductPhotoManager({
           <div>
             <h2 className="text-lg font-semibold leading-tight">Product Photos</h2>
             <p className="text-xs text-muted-foreground">
-              Add a picture to any product — build a catalogue to send customers with images and prices under Barcodes &amp; Printing → Catalogue.
+              Add a picture to any product — it shows up wherever the product does (Billing, Purchase, this list), and the Catalogue tab can
+              turn it into a printable sheet to send customers.
             </p>
           </div>
         </div>
