@@ -9,7 +9,7 @@
  * never be two different layouts. A native implementation reads
  * `job.element.outerHTML` and drives the printer from that.
  */
-export type PrintFormat = "a4" | "a5" | "58mm" | "80mm";
+export type PrintFormat = "a4" | "a5" | "58mm" | "80mm" | "custom";
 
 export type PrintJob = {
   /** The rendered region to print. Everything else on the page is suppressed. */
@@ -17,6 +17,8 @@ export type PrintJob = {
   format: PrintFormat;
   /** Used as the document title, which most browsers offer as the PDF filename. */
   title?: string;
+  /** Required when `format` is "custom" — a shop's own cut paper size, in millimetres. Omit height for a continuous roll. */
+  customSizeMm?: { width: number; height?: number };
 };
 
 export interface PrintService {
@@ -26,7 +28,7 @@ export interface PrintService {
 }
 
 /** Paper geometry per format, used to emit the right `@page` rule. */
-export const PAGE_SIZES: Record<PrintFormat, { css: string; marginCss: string }> = {
+export const PAGE_SIZES: Record<Exclude<PrintFormat, "custom">, { css: string; marginCss: string }> = {
   a4: { css: "A4 portrait", marginCss: "10mm" },
   a5: { css: "A5 portrait", marginCss: "8mm" },
   // Thermal rolls are continuous: fixed width, and the height grows with the

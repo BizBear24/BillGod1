@@ -35,6 +35,7 @@ export function BarcodeStudio({
   defaultLabel,
   defaultInvoice,
   canDesign,
+  initialLabelSelection,
 }: {
   products: Product[];
   company: Company | null;
@@ -45,6 +46,8 @@ export function BarcodeStudio({
   defaultLabel: LabelDesign;
   defaultInvoice: InvoiceDesign;
   canDesign: boolean;
+  /** Pre-fills the label sheet with exactly what a purchase just brought in, so labels for new stock don't need re-typing. */
+  initialLabelSelection?: { productId: string; copies: number }[];
 }) {
   const [tab, setTab] = React.useState("labels");
 
@@ -87,7 +90,13 @@ export function BarcodeStudio({
       </TabsList>
 
       <TabsContent value="labels">
-        <LabelSheet products={products} company={company} templates={labelTemplates} defaultDesign={defaultLabel} />
+        <LabelSheet
+          products={products}
+          company={company}
+          templates={labelTemplates}
+          defaultDesign={defaultLabel}
+          initialSelection={initialLabelSelection}
+        />
       </TabsContent>
       <TabsContent value="sequence">
         <SequenceSheet />
@@ -123,15 +132,17 @@ function LabelSheet({
   company,
   templates,
   defaultDesign,
+  initialSelection,
 }: {
   products: Product[];
   company: Company | null;
   templates: StoredTemplate<LabelDesign>[];
   defaultDesign: LabelDesign;
+  initialSelection?: { productId: string; copies: number }[];
 }) {
   const sheetRef = React.useRef<HTMLDivElement>(null);
   const [designId, setDesignId] = React.useState<string>(templates.find((t) => t.isDefault)?.id ?? templates[0]?.id ?? "builtin");
-  const [selection, setSelection] = React.useState<{ productId: string; copies: number }[]>([]);
+  const [selection, setSelection] = React.useState<{ productId: string; copies: number }[]>(() => initialSelection ?? []);
   const [search, setSearch] = React.useState("");
 
   const design = React.useMemo(
@@ -490,7 +501,8 @@ function InvoicePrinter({
             </div>
           </div>
           <p className="pb-2 text-xs text-muted-foreground">
-            {design.paper.toUpperCase()} · change the layout under Invoice Designer.
+            {design.paper === "custom" ? `${design.customWidthMm}mm wide` : design.paper.toUpperCase()} · change the layout under Invoice
+            Designer.
           </p>
           <Button
             className="ml-auto"
@@ -503,6 +515,8 @@ function InvoicePrinter({
                 element: documentRef.current,
                 format: design.paper as PrintFormat,
                 title: detail?.sale.docNumber ?? "Invoice",
+                customSizeMm:
+                  design.paper === "custom" ? { width: design.customWidthMm, height: design.customHeightMm ?? undefined } : undefined,
               });
             }}
           >

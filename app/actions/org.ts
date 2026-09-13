@@ -340,6 +340,29 @@ export async function updateCompany(companyId: string, input: {
   return { ok: true };
 }
 
+/**
+ * Sets, per document type, a one-time offset added on top of this business's
+ * own row count when generating the next document number. Used when a shop
+ * migrates off another billing system and wants numbering to continue (e.g.
+ * they billed up to invoice 105 elsewhere, so the next one here is 106)
+ * instead of restarting from 1.
+ */
+export async function updateDocNumberOffsets(offsets: Record<string, number>): Promise<ActionResult> {
+  const sessionUser = await requireSessionUser();
+  const membership = await getActiveMembership(sessionUser);
+  if (!membership || !can(membership.role, PERMISSIONS.COMPANY_MANAGE)) return { ok: false, error: "Not allowed." };
+
+  const cleaned: Record<string, number> = {};
+  for (const [docType, value] of Object.entries(offsets)) {
+    const n = Math.trunc(Number(value));
+    if (Number.isFinite(n) && n > 0) cleaned[docType] = n;
+  }
+
+  const db = await getDb();
+  await db.update(businesses).set({ docNumberOffsets: cleaned, updatedAt: new Date() }).where(eq(businesses.id, membership.businessId));
+  return { ok: true };
+}
+
 export async function getSettingsData() {
   const sessionUser = await requireSessionUser();
   const membership = await getActiveMembership(sessionUser);

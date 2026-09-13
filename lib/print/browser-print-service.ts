@@ -1,12 +1,5 @@
 import { PAGE_SIZES, type PrintFormat, type PrintJob, type PrintService } from "./service";
 
-const PAPER_WIDTHS: Record<PrintFormat, string> = {
-  a4: "210mm",
-  a5: "148mm",
-  "80mm": "80mm",
-  "58mm": "58mm",
-};
-
 /**
  * Printing through the browser's own dialog (which is also how "Save as PDF"
  * works, so shops get both from one path).
@@ -29,7 +22,13 @@ export class BrowserPrintService implements PrintService {
   async print(job: PrintJob): Promise<void> {
     if (typeof window === "undefined") return;
 
-    const page = PAGE_SIZES[job.format];
+    // A custom cut size has no fixed entry in PAGE_SIZES — its `@page` rule is
+    // built from the millimetres the shop configured, same as a thermal roll
+    // when no height is given (continuous, so the sheet grows with content).
+    const page =
+      job.format === "custom" && job.customSizeMm
+        ? { css: `${job.customSizeMm.width}mm ${job.customSizeMm.height ? `${job.customSizeMm.height}mm` : "auto"}`, marginCss: "4mm" }
+        : PAGE_SIZES[job.format as Exclude<PrintFormat, "custom">];
     const previousTitle = document.title;
 
     // `visibility` rather than `display` keeps the target's ancestors laid out,

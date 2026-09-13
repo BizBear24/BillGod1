@@ -116,7 +116,8 @@ export function InvoiceDocument({
   className?: string;
 }) {
   const paper = INVOICE_PAPERS.find((p) => p.value === design.paper) ?? INVOICE_PAPERS[0];
-  const narrow = design.paper === "58mm" || design.paper === "80mm";
+  const widthMm = design.paper === "custom" ? design.customWidthMm : paper.widthMm;
+  const narrow = design.paper === "58mm" || design.paper === "80mm" || (design.paper === "custom" && widthMm <= 100);
   const base = (narrow ? 9 : 11) * design.fontScale;
 
   const visible = design.columns.filter((c) => c.visible);
@@ -133,7 +134,7 @@ export function InvoiceDocument({
       className={className}
       style={{
         width: "100%",
-        maxWidth: `${paper.widthMm}mm`,
+        maxWidth: `${widthMm}mm`,
         padding: `${design.marginMm}mm`,
         background: "#fff",
         color: "#000",
@@ -276,7 +277,13 @@ export function InvoiceDocument({
         {design.showSubtotal && <TotalRow label="Subtotal" value={money(sale.subtotal)} base={base} />}
         {design.showDiscount && num(sale.discountAmount) > 0 && (
           <TotalRow
-            label={sale.couponCode ? `Discount (${sale.couponCode})` : sale.loyaltyTierName ? `Discount (${sale.loyaltyTierName})` : "Discount"}
+            label={(() => {
+              const percent = num(sale.subtotal) > 0 ? (num(sale.discountAmount) / num(sale.subtotal)) * 100 : 0;
+              const percentLabel = percent > 0 ? `${Math.round(percent * 10) / 10}%` : "";
+              const source = sale.couponCode ?? sale.loyaltyTierName;
+              const parts = [source, percentLabel].filter(Boolean);
+              return parts.length ? `Discount (${parts.join(", ")})` : "Discount";
+            })()}
             value={`-${money(sale.discountAmount)}`}
             base={base}
           />

@@ -88,6 +88,8 @@ export async function getSalesReport(range: { from: string; to: string }) {
 
   const warehouseLabel = new Map(warehouseRows.map((w) => [w.id, w.label]));
   const counterLabel = new Map(counterRows.map((c) => [c.id, c.label]));
+  // Quotations, sale orders and challans are drafts, not revenue — they never
+  // belong on the sales register, only actual sales and their returns do.
   const revenueRows = rows.filter((r) => r.docType === "sale" || r.docType === "sale_return");
   const sign = (docType: string) => (docType === "sale_return" ? -1 : 1);
 
@@ -104,7 +106,7 @@ export async function getSalesReport(range: { from: string; to: string }) {
   );
 
   return {
-    rows: rows.map((r) => ({
+    rows: revenueRows.map((r) => ({
       ...r,
       warehouseLabel: r.warehouseId ? warehouseLabel.get(r.warehouseId) ?? "—" : "—",
       counterLabel: r.counterId ? counterLabel.get(r.counterId) ?? "—" : "—",
@@ -169,6 +171,8 @@ export async function getPurchaseReport(range: { from: string; to: string }) {
     )
     .orderBy(desc(purchases.createdAt));
 
+  // Purchase orders are drafts, not completed inward supply — the register
+  // only ever shows actual purchases and their returns.
   const costRows = rows.filter((r) => r.docType === "purchase" || r.docType === "purchase_return");
   const sign = (docType: string) => (docType === "purchase_return" ? -1 : 1);
 
@@ -185,7 +189,7 @@ export async function getPurchaseReport(range: { from: string; to: string }) {
   );
 
   return {
-    rows,
+    rows: costRows,
     summary: { ...summary, due: round2(summary.total - summary.paid) },
     bySupplier: groupSum(
       costRows,

@@ -136,6 +136,9 @@ export const INVOICE_PAPERS = [
   { value: "a5", label: "A5 (148 mm)", widthMm: 148 },
   { value: "80mm", label: "80 mm thermal", widthMm: 80 },
   { value: "58mm", label: "58 mm thermal", widthMm: 58 },
+  // Width here is only the fallback for the live preview before a shop has
+  // typed their own size — the real width always comes from customWidthMm.
+  { value: "custom", label: "Custom size (mm)", widthMm: 105 },
 ] as const;
 
 export type InvoicePaper = (typeof INVOICE_PAPERS)[number]["value"];
@@ -175,7 +178,11 @@ export const invoiceColumnSchema = z.object({
 export type InvoiceColumn = z.infer<typeof invoiceColumnSchema>;
 
 export const invoiceDesignSchema = z.object({
-  paper: z.enum(["a4", "a5", "80mm", "58mm"]),
+  paper: z.enum(["a4", "a5", "80mm", "58mm", "custom"]),
+  /** Only meaningful when paper is "custom" — e.g. 105mm for a half-A4 cut sheet. */
+  customWidthMm: z.number().min(40).max(500).default(105),
+  /** Blank/omitted means a continuous roll: the page just grows with the bill. */
+  customHeightMm: z.number().min(40).max(1000).nullable().default(null),
   marginMm: z.number().min(0).max(30).default(8),
   /** Multiplies every font size, for shops that want a denser or larger bill. */
   fontScale: z.number().min(0.6).max(1.8).default(1),
@@ -207,7 +214,7 @@ export const invoiceDesignSchema = z.object({
 });
 export type InvoiceDesign = z.infer<typeof invoiceDesignSchema>;
 
-const DEFAULT_VISIBLE: InvoiceColumnKey[] = ["serial", "name", "quantity", "unitPrice", "taxRatePercent", "lineTotal"];
+const DEFAULT_VISIBLE: InvoiceColumnKey[] = ["serial", "name", "quantity", "unitPrice", "discountPercent", "taxRatePercent", "lineTotal"];
 const DEFAULT_WIDTHS: Partial<Record<InvoiceColumnKey, number>> = {
   serial: 5,
   itemCode: 12,
@@ -226,6 +233,8 @@ export function defaultInvoiceDesign(paper: InvoicePaper = "a4"): InvoiceDesign 
   const narrow = paper === "58mm" || paper === "80mm";
   return {
     paper,
+    customWidthMm: 105,
+    customHeightMm: null,
     marginMm: narrow ? 2 : 8,
     fontScale: narrow ? 0.9 : 1,
     accentColor: "#111111",

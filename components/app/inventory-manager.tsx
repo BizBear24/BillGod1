@@ -250,7 +250,20 @@ function StockLevelsTable({
                       <TableCell>{p.itemCode}</TableCell>
                       <TableCell className="font-medium">{p.name}</TableCell>
                       {showPerWarehouse &&
-                        warehouses.map((w) => <TableCell key={w.id}>{qty(stock?.byWarehouse[w.id] ?? 0)}</TableCell>)}
+                        warehouses.map((w) => {
+                          // A branch can be out or low on its own even when the
+                          // business total looks fine — that mismatch is exactly
+                          // what tells a manager where to transfer stock from.
+                          const branchQty = stock?.byWarehouse[w.id] ?? 0;
+                          const branchOut = branchQty <= 0;
+                          const branchLow = !branchOut && reorder > 0 && branchQty <= reorder;
+                          return (
+                            <TableCell key={w.id} className={branchOut ? "font-semibold text-destructive" : branchLow ? "font-medium text-amber-600" : ""}>
+                              {qty(branchQty)}
+                              {branchOut && <span className="ml-1 text-[10px] uppercase">out</span>}
+                            </TableCell>
+                          );
+                        })}
                       <TableCell>
                         <span className={low ? "font-semibold text-destructive" : ""}>{qty(total)}</span>
                         {low && (

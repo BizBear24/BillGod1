@@ -2,7 +2,7 @@
 
 import { eq, and, desc, inArray, sql } from "drizzle-orm";
 import { getDb } from "@/db/client";
-import { purchases, purchaseItems, purchasePayments, products, suppliers, taxRates, stockMovements, hsnCodes } from "@/db/schema";
+import { purchases, purchaseItems, purchasePayments, products, suppliers, taxRates, stockMovements, hsnCodes, businesses } from "@/db/schema";
 import { requireSessionUser, getActiveMembership } from "@/lib/auth/session";
 import { can, PERMISSIONS } from "@/lib/auth/permissions";
 import { logAudit } from "@/lib/audit";
@@ -187,7 +187,12 @@ export async function savePurchase(
           .select({ count: sql<number>`count(*)::int` })
           .from(purchases)
           .where(and(eq(purchases.businessId, businessId), eq(purchases.docType, parsed.data.docType)));
-        const docNumber = `${DOC_PREFIX[parsed.data.docType]}-${String(count + 1).padStart(6, "0")}`;
+        // A shop migrating from another billing system sets a one-time offset
+        // (Bill Settings) so numbering continues from their last document
+        // instead of restarting at 1.
+        const [business] = await tx.select({ docNumberOffsets: businesses.docNumberOffsets }).from(businesses).where(eq(businesses.id, businessId)).limit(1);
+        const offset = business?.docNumberOffsets?.[parsed.data.docType] ?? 0;
+        const docNumber = `${DOC_PREFIX[parsed.data.docType]}-${String(count + 1 + offset).padStart(6, "0")}`;
 
         const [created] = await tx
           .insert(purchases)

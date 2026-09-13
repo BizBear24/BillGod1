@@ -14,6 +14,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
       </div>
       <div className="flex gap-6 border-b border-border">
         <SettingsTab href="/settings/company" label="Company & Branches" active={pathname.startsWith("/settings/company")} />
+        <SettingsTab href="/settings/billing" label="Bill Settings" active={pathname.startsWith("/settings/billing")} />
         <SettingsTab href="/settings/users" label="Team & Roles" active={pathname.startsWith("/settings/users")} />
       </div>
       {children}

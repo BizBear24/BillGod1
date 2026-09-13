@@ -8,9 +8,11 @@ import { requireSessionUser, getActiveMembership } from "@/lib/auth/session";
 import { can, PERMISSIONS } from "@/lib/auth/permissions";
 import { getLowStockReport } from "@/app/actions/inventory";
 import { getGrossProfit } from "@/app/actions/reports";
+import { listWarehousesForBusiness } from "@/app/actions/org";
 import { todayKey } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { ActiveBranchPicker } from "@/components/app/active-branch-picker";
 
 export default async function DashboardPage() {
   const sessionUser = await requireSessionUser();
@@ -25,7 +27,7 @@ export default async function DashboardPage() {
   startOfToday.setHours(0, 0, 0, 0);
 
   const db = await getDb();
-  const [companyRows, branchRows, memberRows, [todaySales], lowStock] = await Promise.all([
+  const [companyRows, branchRows, memberRows, [todaySales], lowStock, warehouseRows] = await Promise.all([
     db.select().from(companies).where(eq(companies.businessId, businessId)),
     db
       .select({ id: branches.id })
@@ -38,6 +40,7 @@ export default async function DashboardPage() {
       .from(sales)
       .where(and(eq(sales.businessId, businessId), eq(sales.docType, "sale"), eq(sales.status, "completed"), gte(sales.createdAt, startOfToday))),
     can(membership.role, PERMISSIONS.INVENTORY_VIEW) ? getLowStockReport() : Promise.resolve([]),
+    listWarehousesForBusiness(businessId),
   ]);
 
   // Gross profit needs the cost ledger, so it is only shown to roles that are
@@ -52,6 +55,8 @@ export default async function DashboardPage() {
         <h1 className="text-3xl font-bold">Welcome back, {sessionUser.name.split(" ")[0]}</h1>
         <p className="text-muted-foreground">Here&apos;s what&apos;s happening with {membership.businessName}.</p>
       </div>
+
+      <ActiveBranchPicker businessId={businessId} warehouses={warehouseRows} />
 
       <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
         <RealMoneyStat icon={IndianRupee} label="Today's Sales" value={parseFloat(todaySales?.total ?? "0")} href="/billing" />

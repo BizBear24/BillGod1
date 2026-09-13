@@ -2,17 +2,25 @@ import { eq } from "drizzle-orm";
 import { getDb } from "@/db/client";
 import { companies } from "@/db/schema";
 import { requireSessionUser, getActiveMembership } from "@/lib/auth/session";
+import { can, PERMISSIONS } from "@/lib/auth/permissions";
 import { getBillingPageData, listReturnableSales } from "@/app/actions/sales";
 import { getDefaultDesigns } from "@/app/actions/print-templates";
 import { BillingPos } from "@/components/app/billing-pos";
+import { Card, CardContent } from "@/components/ui/card";
 
 export default async function BillingPage() {
   const sessionUser = await requireSessionUser();
   const membership = await getActiveMembership(sessionUser);
+  if (!membership || !can(membership.role, PERMISSIONS.BILLING_VIEW)) {
+    return (
+      <Card>
+        <CardContent className="py-10 text-center text-muted-foreground">You don&apos;t have permission to view this.</CardContent>
+      </Card>
+    );
+  }
+
   const db = await getDb();
-  const companyRows = membership
-    ? await db.select().from(companies).where(eq(companies.businessId, membership.businessId)).limit(1)
-    : [];
+  const companyRows = await db.select().from(companies).where(eq(companies.businessId, membership.businessId)).limit(1);
 
   const [data, returnableSales, defaults] = await Promise.all([getBillingPageData(), listReturnableSales(), getDefaultDesigns()]);
 
@@ -23,6 +31,7 @@ export default async function BillingPage() {
         <p className="text-muted-foreground">Fast checkout for sales, returns, quotations, orders and challans.</p>
       </div>
       <BillingPos
+        businessId={membership.businessId}
         products={data.products}
         customers={data.customers}
         salespersons={data.salespersons}

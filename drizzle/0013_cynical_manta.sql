@@ -1,0 +1,1 @@
+ALTER TABLE "businesses" ADD COLUMN "doc_number_offsets" jsonb DEFAULT '{}'::jsonb NOT NULL;

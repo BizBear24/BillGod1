@@ -71,7 +71,8 @@ export function PurchaseDocument({
   className?: string;
 }) {
   const paper = INVOICE_PAPERS.find((p) => p.value === design.paper) ?? INVOICE_PAPERS[0];
-  const narrow = design.paper === "58mm" || design.paper === "80mm";
+  const widthMm = design.paper === "custom" ? design.customWidthMm : paper.widthMm;
+  const narrow = design.paper === "58mm" || design.paper === "80mm" || (design.paper === "custom" && widthMm <= 100);
   const base = (narrow ? 9 : 11) * design.fontScale;
   const balance = num(purchase.totalAmount) - num(purchase.amountPaid);
 
@@ -80,7 +81,7 @@ export function PurchaseDocument({
       className={className}
       style={{
         width: "100%",
-        maxWidth: `${paper.widthMm}mm`,
+        maxWidth: `${widthMm}mm`,
         padding: `${design.marginMm}mm`,
         background: "#fff",
         color: "#000",

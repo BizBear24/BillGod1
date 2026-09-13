@@ -9,6 +9,7 @@ import { checkCoupon } from "@/app/actions/engagement";
 import { SALE_DOC_TYPES, SALE_DOC_TYPE_LABELS, SALE_PAYMENT_METHODS, SALE_PAYMENT_METHOD_LABELS } from "@/lib/validation/sales";
 import { computeSaleTotals, round2 } from "@/lib/sales/totals";
 import { resolveTier, type TierRow } from "@/lib/loyalty/tiers";
+import { useActiveWarehouse } from "@/lib/active-branch";
 import { InvoiceDocument, type InvoiceCompany } from "@/components/app/invoice-document";
 import { getPrintService, type PrintFormat } from "@/lib/print";
 import type { InvoiceDesign } from "@/lib/print/templates";
@@ -76,6 +77,7 @@ type PaymentRow = { method: (typeof SALE_PAYMENT_METHODS)[number]; amount: numbe
 const money = (n: number) => `₹${n.toFixed(2)}`;
 
 export function BillingPos({
+  businessId,
   products,
   customers,
   salespersons,
@@ -93,6 +95,7 @@ export function BillingPos({
   company,
   invoiceDesign,
 }: {
+  businessId: string;
   products: Product[];
   customers: Customer[];
   salespersons: Salesperson[];
@@ -106,7 +109,8 @@ export function BillingPos({
   tiers: TierRow[];
   /** In-stock serials the cashier can pick from, keyed by product id. */
   serialsByProduct: Record<string, string[]>;
-  stockByProduct: Record<string, number>;
+  /** Current stock per product, keyed by warehouse id first — a product's count is only ever what that branch actually holds. */
+  stockByProduct: Record<string, Record<string, number>>;
   canManage: boolean;
   company: InvoiceCompany | null;
   invoiceDesign: InvoiceDesign;
@@ -117,7 +121,7 @@ export function BillingPos({
   const [docType, setDocType] = React.useState<(typeof SALE_DOC_TYPES)[number]>("sale");
   const [customerId, setCustomerId] = React.useState("walkin");
   const [salespersonId, setSalespersonId] = React.useState("none");
-  const [warehouseId, setWarehouseId] = React.useState(warehouses[0]?.id ?? "");
+  const [warehouseId, setWarehouseId] = useActiveWarehouse(businessId, warehouses);
   const [counterId, setCounterId] = React.useState(counters.find((c) => c.isDefault)?.id ?? counters[0]?.id ?? "none");
   const [originalSaleId, setOriginalSaleId] = React.useState("none");
   const [notes, setNotes] = React.useState("");
@@ -483,7 +487,7 @@ export function BillingPos({
             </div>
             <div className="grid gap-2 sm:grid-cols-2">
               {filtered.map((p) => {
-                const stock = stockByProduct[p.id] ?? 0;
+                const stock = stockByProduct[warehouseId]?.[p.id] ?? 0;
                 const isOut = stock <= 0;
                 const isLow = !isOut && stock <= 10;
                 return (
@@ -693,9 +697,20 @@ export function BillingPos({
                   <span>{money(totals.subtotal)}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Discount</span>
+                  <span className="text-muted-foreground">
+                    Discount
+                    {totals.discountAmount > 0 && totals.subtotal > 0 && (
+                      <span className="ml-1 text-xs">({round2((totals.discountAmount / totals.subtotal) * 100)}%)</span>
+                    )}
+                  </span>
                   <span>-{money(totals.discountAmount)}</span>
                 </div>
+                {totals.lineDiscountAmount > 0 && (
+                  <div className="flex justify-between text-xs text-muted-foreground">
+                    <span className="pl-3">incl. line discounts</span>
+                    <span>-{money(totals.lineDiscountAmount)}</span>
+                  </div>
+                )}
                 {totals.couponDiscountAmount > 0 && coupon && (
                   <div className="flex justify-between text-xs text-muted-foreground">
                     <span className="pl-3">incl. coupon {coupon.code}</span>
@@ -1090,6 +1105,7 @@ const PRINT_SIZES = [
   { value: "a5", label: "A5" },
   { value: "80mm", label: "80mm" },
   { value: "58mm", label: "58mm" },
+  { value: "custom", label: "Custom" },
 ] as const;
 type PrintSize = (typeof PRINT_SIZES)[number]["value"];
 
@@ -1127,9 +1143,14 @@ function PrintSaleButton({
     if (!detail || !ref.current) return;
     const element = ref.current;
     void getPrintService()
-      .print({ element, format: size as PrintFormat, title: detail.sale.docNumber })
+      .print({
+        element,
+        format: size as PrintFormat,
+        title: detail.sale.docNumber,
+        customSizeMm: size === "custom" ? { width: design.customWidthMm, height: design.customHeightMm ?? undefined } : undefined,
+      })
       .finally(() => setDetail(null));
-  }, [detail, size]);
+  }, [detail, size, design.customWidthMm, design.customHeightMm]);
 
   return (
     <>

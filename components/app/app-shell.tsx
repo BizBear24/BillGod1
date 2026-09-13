@@ -19,7 +19,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { ROLE_LABELS, type Role } from "@/lib/auth/permissions";
+import { ROLE_LABELS, can, type Role } from "@/lib/auth/permissions";
 
 type Business = { businessId: string; businessName: string; role: Role };
 
@@ -39,7 +39,7 @@ export function AppShell({
   return (
     <div className="flex min-h-screen bg-background">
       <aside className="hidden w-64 shrink-0 flex-col border-r border-sidebar-border bg-sidebar md:flex">
-        <SidebarContent />
+        <SidebarContent role={activeBusiness.role} />
       </aside>
 
       {mobileOpen && (
@@ -51,7 +51,7 @@ export function AppShell({
                 <X className="h-5 w-5" />
               </Button>
             </div>
-            <SidebarContent onNavigate={() => setMobileOpen(false)} />
+            <SidebarContent role={activeBusiness.role} onNavigate={() => setMobileOpen(false)} />
           </aside>
         </div>
       )}
@@ -73,9 +73,13 @@ export function AppShell({
   );
 }
 
-function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
+function SidebarContent({ role, onNavigate }: { role: Role; onNavigate?: () => void }) {
   const pathname = usePathname();
   const t = useT();
+  // Cosmetic gate only — every action still checks `can()` server-side. This
+  // just keeps a cashier from ever seeing a "Purchase" link they'd be turned
+  // away from anyway.
+  const visibleItems = NAV_ITEMS.filter((item) => !item.permission || can(role, item.permission));
 
   return (
     <>
@@ -84,7 +88,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
         <span className="text-lg font-bold tracking-tight text-sidebar-foreground">{t("app.name")}</span>
       </div>
       <nav className="flex-1 space-y-2 overflow-y-auto px-3 py-3">
-        {NAV_ITEMS.map((item) => {
+        {visibleItems.map((item) => {
           const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
           const Icon = item.icon;
           return (

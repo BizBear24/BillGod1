@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, pgEnum, unique } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, pgEnum, unique, jsonb } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { users } from "./auth";
 import { companies } from "./org";
@@ -29,6 +29,13 @@ export const businesses = pgTable("businesses", {
   id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
   name: text("name").notNull(),
   currency: text("currency").notNull().default("INR"),
+  /**
+   * Per-docType starting offset (e.g. { sale: 105 }), added on top of this
+   * business's own row count when the next document number is generated.
+   * Set once when migrating off another billing system, so numbering
+   * continues (106, 107, …) instead of restarting at 1.
+   */
+  docNumberOffsets: jsonb("doc_number_offsets").$type<Record<string, number>>().notNull().default({}),
   createdByUserId: text("created_by_user_id").notNull().references(() => users.id),
   setupCompletedAt: timestamp("setup_completed_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

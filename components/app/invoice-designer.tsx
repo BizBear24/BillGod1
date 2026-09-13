@@ -222,6 +222,33 @@ export function InvoiceDesigner({
                   <label className="text-xs font-medium text-muted-foreground">Title</label>
                   <Input value={design.title} disabled={!canManage} onChange={(e) => patch({ title: e.target.value })} />
                 </div>
+                {design.paper === "custom" && (
+                  <>
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium text-muted-foreground">Width (mm)</label>
+                      <Input
+                        type="number"
+                        step="1"
+                        value={design.customWidthMm}
+                        disabled={!canManage}
+                        onChange={(e) => patch({ customWidthMm: clampNumber(e.target.value, 40, 500, design.customWidthMm) })}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium text-muted-foreground">Height (mm)</label>
+                      <Input
+                        type="number"
+                        step="1"
+                        placeholder="Auto (continuous)"
+                        value={design.customHeightMm ?? ""}
+                        disabled={!canManage}
+                        onChange={(e) =>
+                          patch({ customHeightMm: e.target.value.trim() === "" ? null : clampNumber(e.target.value, 40, 1000, design.customHeightMm ?? 297) })
+                        }
+                      />
+                    </div>
+                  </>
+                )}
                 <div className="space-y-1">
                   <label className="text-xs font-medium text-muted-foreground">Margin (mm)</label>
                   <Input

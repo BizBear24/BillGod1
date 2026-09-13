@@ -17,6 +17,7 @@ import {
   couponRedemptions,
   coupons as couponsTable,
   hsnCodes,
+  businesses,
 } from "@/db/schema";
 import { requireSessionUser, getActiveMembership } from "@/lib/auth/session";
 import { can, PERMISSIONS } from "@/lib/auth/permissions";
@@ -295,7 +296,12 @@ export async function saveSale(saleId: string | null, input: unknown): Promise<A
           .select({ count: sql<number>`count(*)::int` })
           .from(sales)
           .where(and(eq(sales.businessId, businessId), eq(sales.docType, docType)));
-        const docNumber = `${DOC_PREFIX[docType]}-${String(count + 1).padStart(6, "0")}`;
+        // A shop migrating from another billing system sets a one-time offset
+        // (Bill Settings) so numbering continues from their last invoice
+        // instead of restarting at 1.
+        const [business] = await tx.select({ docNumberOffsets: businesses.docNumberOffsets }).from(businesses).where(eq(businesses.id, businessId)).limit(1);
+        const offset = business?.docNumberOffsets?.[docType] ?? 0;
+        const docNumber = `${DOC_PREFIX[docType]}-${String(count + 1 + offset).padStart(6, "0")}`;
 
         const [created] = await tx
           .insert(sales)
@@ -740,14 +746,22 @@ export async function getBillingPageData() {
       productRows.filter((p) => p.trackSerial).map((p) => p.id)
     ),
     db
-      .select({ productId: stockMovements.productId, total: sql<string>`sum(${stockMovements.quantity})` })
+      .select({
+        warehouseId: stockMovements.warehouseId,
+        productId: stockMovements.productId,
+        total: sql<string>`sum(${stockMovements.quantity})`,
+      })
       .from(stockMovements)
       .where(eq(stockMovements.businessId, businessId))
-      .groupBy(stockMovements.productId),
+      .groupBy(stockMovements.warehouseId, stockMovements.productId),
   ]);
 
-  const stockByProduct: Record<string, number> = {};
-  for (const row of stockRows) stockByProduct[row.productId] = parseFloat(row.total ?? "0");
+  // Keyed by warehouse first: stock is a per-branch fact, and the POS only
+  // ever sells out of the warehouse the cashier has picked at the top.
+  const stockByProduct: Record<string, Record<string, number>> = {};
+  for (const row of stockRows) {
+    (stockByProduct[row.warehouseId] ??= {})[row.productId] = parseFloat(row.total ?? "0");
+  }
 
   return {
     products: productRows,

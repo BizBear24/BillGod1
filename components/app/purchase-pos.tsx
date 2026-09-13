@@ -1,9 +1,10 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Search, Trash2, Plus, Minus, ShoppingBag, PauseCircle, X, Receipt, Ban, Printer } from "lucide-react";
+import { Search, Trash2, Plus, Minus, ShoppingBag, PauseCircle, X, Receipt, Ban, Printer, Tag } from "lucide-react";
 import { savePurchase, discardHeldPurchase, getPurchaseWithItems, cancelPurchase, getPurchaseInvoiceData } from "@/app/actions/purchases";
 import { PURCHASE_DOC_TYPES, PURCHASE_DOC_TYPE_LABELS, PURCHASE_PAYMENT_METHODS, PURCHASE_PAYMENT_METHOD_LABELS } from "@/lib/validation/purchases";
 import { PurchaseDocument } from "@/components/app/purchase-document";
@@ -18,6 +19,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CancelDocDialog } from "@/components/app/cancel-doc-dialog";
+import { useActiveWarehouse } from "@/lib/active-branch";
 
 type Product = {
   id: string;
@@ -65,6 +67,7 @@ const money = (n: number) => `₹${n.toFixed(2)}`;
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
 export function PurchasePos({
+  businessId,
   products,
   suppliers,
   taxRates,
@@ -76,6 +79,7 @@ export function PurchasePos({
   company,
   invoiceDesign,
 }: {
+  businessId: string;
   products: Product[];
   suppliers: Supplier[];
   taxRates: TaxRate[];
@@ -92,7 +96,7 @@ export function PurchasePos({
   const [cart, setCart] = React.useState<CartLine[]>([]);
   const [docType, setDocType] = React.useState<(typeof PURCHASE_DOC_TYPES)[number]>("purchase");
   const [supplierId, setSupplierId] = React.useState(suppliers[0]?.id ?? "");
-  const [warehouseId, setWarehouseId] = React.useState(warehouses[0]?.id ?? "");
+  const [warehouseId, setWarehouseId] = useActiveWarehouse(businessId, warehouses);
   const [supplierInvoiceNumber, setSupplierInvoiceNumber] = React.useState("");
   const [originalPurchaseId, setOriginalPurchaseId] = React.useState("none");
   const [payments, setPayments] = React.useState<PaymentRow[]>([{ method: "cash", amount: 0 }]);
@@ -100,7 +104,7 @@ export function PurchasePos({
   const [saving, setSaving] = React.useState(false);
   const [tab, setTab] = React.useState<"buy" | "held" | "recent">("buy");
   const [cancelTarget, setCancelTarget] = React.useState<RecentPurchase | null>(null);
-  const [justCompleted, setJustCompleted] = React.useState<{ id: string; docNumber: string } | null>(null);
+  const [justCompleted, setJustCompleted] = React.useState<{ id: string; docNumber: string; docType: string } | null>(null);
 
   const taxRateById = React.useMemo(() => Object.fromEntries(taxRates.map((t) => [t.id, parseFloat(t.ratePercent)])), [taxRates]);
   const productById = React.useMemo(() => Object.fromEntries(products.map((p) => [p.id, p])), [products]);
@@ -249,7 +253,8 @@ export function PurchasePos({
       return;
     }
     toast.success(isDraft ? `Held as ${result.docNumber}` : `${PURCHASE_DOC_TYPE_LABELS[docType]} ${result.docNumber} completed`);
-    const completed = !isDraft && result.purchaseId && result.docNumber ? { id: result.purchaseId, docNumber: result.docNumber } : null;
+    const completed =
+      !isDraft && result.purchaseId && result.docNumber ? { id: result.purchaseId, docNumber: result.docNumber, docType } : null;
     resetForm();
     if (completed) setJustCompleted(completed);
     router.refresh();
@@ -354,6 +359,7 @@ export function PurchasePos({
             <span>{justCompleted.docNumber} completed.</span>
             <div className="flex items-center gap-2">
               <PrintPurchaseButton purchaseId={justCompleted.id} company={company} design={invoiceDesign} label={`Print ${justCompleted.docNumber}`} />
+              {justCompleted.docType === "purchase" && <PrintBarcodesLink purchaseId={justCompleted.id} />}
               <Button variant="ghost" size="icon" aria-label="Dismiss" onClick={() => setJustCompleted(null)}>
                 <X className="h-3.5 w-3.5" />
               </Button>
@@ -722,6 +728,7 @@ export function PurchasePos({
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1">
                         <PrintPurchaseButton purchaseId={r.id} company={company} design={invoiceDesign} />
+                        {r.docType === "purchase" && r.status === "completed" && <PrintBarcodesLink purchaseId={r.id} />}
                         {r.status === "completed" && (
                           <Button variant="ghost" size="sm" onClick={() => setCancelTarget(r)}>
                             <Ban className="h-3.5 w-3.5 text-destructive" />
@@ -750,6 +757,16 @@ export function PurchasePos({
   );
 }
 
+/** Jumps to Barcodes with a label sheet pre-filled at exactly the quantities this purchase brought in. */
+function PrintBarcodesLink({ purchaseId }: { purchaseId: string }) {
+  return (
+    <Button variant="ghost" size="sm" nativeButton={false} render={<Link href={`/barcodes?purchaseId=${purchaseId}`} />}>
+      <Tag className="h-3.5 w-3.5" />
+      Print Barcodes
+    </Button>
+  );
+}
+
 type PurchaseInvoiceDetail = Awaited<ReturnType<typeof getPurchaseInvoiceData>>;
 
 const PRINT_SIZES = [
@@ -757,6 +774,7 @@ const PRINT_SIZES = [
   { value: "a5", label: "A5" },
   { value: "80mm", label: "80mm" },
   { value: "58mm", label: "58mm" },
+  { value: "custom", label: "Custom" },
 ] as const;
 type PrintSize = (typeof PRINT_SIZES)[number]["value"];
 
@@ -795,9 +813,14 @@ function PrintPurchaseButton({
     if (!detail || !ref.current) return;
     const element = ref.current;
     void getPrintService()
-      .print({ element, format: size as PrintFormat, title: detail.purchase.docNumber })
+      .print({
+        element,
+        format: size as PrintFormat,
+        title: detail.purchase.docNumber,
+        customSizeMm: size === "custom" ? { width: design.customWidthMm, height: design.customHeightMm ?? undefined } : undefined,
+      })
       .finally(() => setDetail(null));
-  }, [detail, size]);
+  }, [detail, size, design.customWidthMm, design.customHeightMm]);
 
   return (
     <>

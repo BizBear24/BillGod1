@@ -92,6 +92,13 @@
       "when": 1789161803053,
       "tag": "0012_cold_rictor",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1789286049888,
+      "tag": "0013_cynical_manta",
+      "breakpoints": true
     }
   ]
 }
