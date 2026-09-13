@@ -11,7 +11,7 @@ import { users } from "./auth";
  * every sale-side document type (sale, return, quotation, order, challan)
  * so they share numbering, line items and payment recording.
  */
-export const saleDocTypeEnum = pgEnum("sale_doc_type", ["sale", "sale_return", "quotation", "sale_order", "challan"]);
+export const saleDocTypeEnum = pgEnum("sale_doc_type", ["sale", "sale_return", "quotation", "estimate", "sale_order", "challan"]);
 export const saleStatusEnum = pgEnum("sale_status", ["draft", "completed", "cancelled"]);
 export const salePaymentMethodEnum = pgEnum("sale_payment_method", ["cash", "upi", "card", "credit"]);
 

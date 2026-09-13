@@ -44,6 +44,22 @@ export const products = pgTable(
   (table) => [unique().on(table.businessId, table.itemCode)]
 );
 
+/**
+ * A product's photo, kept out of the `products` row on purpose: Billing,
+ * Purchase and most other screens select every product wholesale on every
+ * load, and an inline image column would ride along with all of them even
+ * when nothing on screen shows a picture. Splitting it into its own table
+ * means only the product master's photo tool and the catalogue builder ever
+ * pay for the bytes.
+ */
+export const productImages = pgTable("product_images", {
+  productId: text("product_id").primaryKey().references(() => products.id, { onDelete: "cascade" }),
+  businessId: text("business_id").notNull().references(() => businesses.id, { onDelete: "cascade" }),
+  /** A compressed data: URI (resized client-side before upload) — small enough that a plain column is fine. */
+  dataUrl: text("data_url").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 /** Products can carry more than one scannable barcode (spec §19/§39). */
 export const productBarcodes = pgTable(
   "product_barcodes",

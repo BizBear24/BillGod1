@@ -37,6 +37,7 @@ const DOC_PREFIX: Record<CreateSaleInput["docType"], string> = {
   sale: "SALE",
   sale_return: "RET",
   quotation: "QUOT",
+  estimate: "EST",
   sale_order: "SO",
   challan: "CHAL",
 };

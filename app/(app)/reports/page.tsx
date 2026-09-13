@@ -1,7 +1,7 @@
 import { requireSessionUser, getActiveMembership } from "@/lib/auth/session";
 import { can, PERMISSIONS } from "@/lib/auth/permissions";
 import { todayKey, daysAgoKey } from "@/lib/utils";
-import { getSalesReport } from "@/app/actions/reports";
+import { getSalesDocReport } from "@/app/actions/reports";
 import { ReportsManager } from "@/components/app/reports-manager";
 import { Card, CardContent } from "@/components/ui/card";
 
@@ -25,7 +25,7 @@ export default async function ReportsPage() {
 
   // The landing view (last 30 days of sales) is rendered server-side so the
   // page arrives with data instead of fetching after mount.
-  const initialSalesReport = await getSalesReport({ from: daysAgoKey(30), to: todayKey() });
+  const initialSalesReport = await getSalesDocReport("sale", { from: daysAgoKey(30), to: todayKey() });
 
   return (
     <div className="space-y-6">

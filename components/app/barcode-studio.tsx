@@ -2,12 +2,13 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import { Barcode, Printer, LayoutGrid, FileText, Trash2, PenLine, Wand2 } from "lucide-react";
+import { Barcode, Printer, LayoutGrid, FileText, Trash2, PenLine, Wand2, GalleryHorizontalEnd } from "lucide-react";
 import { BarcodeSvg, LABEL_SYMBOLOGIES, type LabelSymbology } from "@/components/app/barcode-svg";
 import { generateSequence } from "@/lib/barcode/encoders";
 import { getInvoiceData } from "@/app/actions/sales";
 import { LabelDesigner } from "@/components/app/label-designer";
 import { InvoiceDesigner } from "@/components/app/invoice-designer";
+import { CatalogueBuilder } from "@/components/app/catalogue-builder";
 import { LabelPreview, type LabelData } from "@/components/app/label-canvas";
 import { InvoiceDocument, type InvoiceCompany } from "@/components/app/invoice-document";
 import type { LabelDesign, InvoiceDesign } from "@/lib/print/templates";
@@ -36,6 +37,7 @@ export function BarcodeStudio({
   defaultInvoice,
   canDesign,
   initialLabelSelection,
+  imageProductIds,
 }: {
   products: Product[];
   company: Company | null;
@@ -48,6 +50,8 @@ export function BarcodeStudio({
   canDesign: boolean;
   /** Pre-fills the label sheet with exactly what a purchase just brought in, so labels for new stock don't need re-typing. */
   initialLabelSelection?: { productId: string; copies: number }[];
+  /** Which products have a photo on file, for the Catalogue tab. */
+  imageProductIds: string[];
 }) {
   const [tab, setTab] = React.useState("labels");
 
@@ -87,6 +91,10 @@ export function BarcodeStudio({
           <Wand2 className="h-4 w-4" />
           Invoice Designer
         </TabsTrigger>
+        <TabsTrigger value="catalogue">
+          <GalleryHorizontalEnd className="h-4 w-4" />
+          Catalogue
+        </TabsTrigger>
       </TabsList>
 
       <TabsContent value="labels">
@@ -97,6 +105,9 @@ export function BarcodeStudio({
           defaultDesign={defaultLabel}
           initialSelection={initialLabelSelection}
         />
+      </TabsContent>
+      <TabsContent value="catalogue">
+        <CatalogueBuilder products={products} company={company} imageProductIds={imageProductIds} />
       </TabsContent>
       <TabsContent value="sequence">
         <SequenceSheet />

@@ -66,6 +66,7 @@ export type InvoiceSale = {
 const DOC_TITLE_OVERRIDES: Record<string, string> = {
   sale_return: "CREDIT NOTE / RETURN",
   quotation: "QUOTATION",
+  estimate: "ESTIMATE",
   sale_order: "SALE ORDER",
   challan: "DELIVERY CHALLAN",
 };

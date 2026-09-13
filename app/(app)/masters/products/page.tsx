@@ -1,13 +1,14 @@
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
-import { getProductsPageData, createProduct, updateProduct, deleteProduct } from "@/app/actions/products";
+import { getProductsPageData, createProduct, updateProduct, deleteProduct, getProductImageIds } from "@/app/actions/products";
 import { EntityCrudManager, type CrudField } from "@/components/app/entity-crud-manager";
 import { ProductImport } from "@/components/app/product-import";
+import { ProductPhotoManager } from "@/components/app/product-photo-manager";
 
 const NONE = { value: "none", label: "—" };
 
 export default async function ProductsPage() {
-  const data = await getProductsPageData();
+  const [data, imageProductIds] = await Promise.all([getProductsPageData(), getProductImageIds()]);
 
   const categoryOptions = [NONE, ...data.categories.map((c) => ({ value: c.id, label: c.name }))];
   const sectionOptions = [NONE, ...data.sections.map((s) => ({ value: s.id, label: s.name }))];
@@ -60,6 +61,7 @@ export default async function ProductsPage() {
       </div>
 
       <ProductImport canManage={data.canManage} />
+      <ProductPhotoManager products={data.products} imageProductIds={imageProductIds} canManage={data.canManage} />
 
       <EntityCrudManager
         title="Products"

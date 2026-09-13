@@ -1,10 +1,11 @@
 import { z } from "zod";
 
-export const SALE_DOC_TYPES = ["sale", "sale_return", "quotation", "sale_order", "challan"] as const;
+export const SALE_DOC_TYPES = ["sale", "sale_return", "quotation", "estimate", "sale_order", "challan"] as const;
 export const SALE_DOC_TYPE_LABELS: Record<(typeof SALE_DOC_TYPES)[number], string> = {
   sale: "Sale",
   sale_return: "Sale Return",
   quotation: "Quotation",
+  estimate: "Estimate",
   sale_order: "Sale Order",
   challan: "Challan",
 };

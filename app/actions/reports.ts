@@ -18,6 +18,11 @@ import { can, PERMISSIONS } from "@/lib/auth/permissions";
 import { toDateKey } from "@/lib/utils";
 import { valueStock } from "@/lib/inventory/valuation";
 import { listWarehousesForBusiness, listCountersForBusiness } from "./org";
+import type { CreateSaleInput } from "@/lib/validation/sales";
+import type { CreatePurchaseInput } from "@/lib/validation/purchases";
+
+export type SaleDocType = CreateSaleInput["docType"];
+export type PurchaseDocType = CreatePurchaseInput["docType"];
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -47,7 +52,14 @@ function groupSum<T>(rows: T[], keyOf: (row: T) => string, labelOf: (row: T) => 
   return [...map.values()].sort((a, b) => b.total - a.total);
 }
 
-export async function getSalesReport(range: { from: string; to: string }) {
+/**
+ * One document type's own register — a quotation report never has a stray
+ * challan in it, because it is never asked for more than one docType at a
+ * time. `sale_return`/`purchase_return` get their own tab too rather than
+ * being netted against the forward document, so a return register reads as
+ * a register of returns, not a negative adjustment buried in Sales.
+ */
+export async function getSalesDocReport(docType: SaleDocType, range: { from: string; to: string }) {
   const membership = await requireReports();
   const db = await getDb();
   const { from, to } = parseRange(range);
@@ -78,6 +90,7 @@ export async function getSalesReport(range: { from: string; to: string }) {
       .where(
         and(
           eq(sales.businessId, membership.businessId),
+          eq(sales.docType, docType),
           eq(sales.status, "completed"),
           gte(sales.createdAt, from),
           lte(sales.createdAt, to)
@@ -88,58 +101,54 @@ export async function getSalesReport(range: { from: string; to: string }) {
 
   const warehouseLabel = new Map(warehouseRows.map((w) => [w.id, w.label]));
   const counterLabel = new Map(counterRows.map((c) => [c.id, c.label]));
-  // Quotations, sale orders and challans are drafts, not revenue — they never
-  // belong on the sales register, only actual sales and their returns do.
-  const revenueRows = rows.filter((r) => r.docType === "sale" || r.docType === "sale_return");
-  const sign = (docType: string) => (docType === "sale_return" ? -1 : 1);
 
-  const summary = revenueRows.reduce(
+  const summary = rows.reduce(
     (acc, r) => ({
-      subtotal: round2(acc.subtotal + sign(r.docType) * parseFloat(r.subtotal)),
-      discount: round2(acc.discount + sign(r.docType) * parseFloat(r.discountAmount)),
-      tax: round2(acc.tax + sign(r.docType) * parseFloat(r.taxAmount)),
-      total: round2(acc.total + sign(r.docType) * parseFloat(r.totalAmount)),
-      paid: round2(acc.paid + sign(r.docType) * parseFloat(r.amountPaid)),
+      subtotal: round2(acc.subtotal + parseFloat(r.subtotal)),
+      discount: round2(acc.discount + parseFloat(r.discountAmount)),
+      tax: round2(acc.tax + parseFloat(r.taxAmount)),
+      total: round2(acc.total + parseFloat(r.totalAmount)),
+      paid: round2(acc.paid + parseFloat(r.amountPaid)),
       count: acc.count + 1,
     }),
     { subtotal: 0, discount: 0, tax: 0, total: 0, paid: 0, count: 0 }
   );
 
   return {
-    rows: revenueRows.map((r) => ({
+    rows: rows.map((r) => ({
       ...r,
       warehouseLabel: r.warehouseId ? warehouseLabel.get(r.warehouseId) ?? "—" : "—",
       counterLabel: r.counterId ? counterLabel.get(r.counterId) ?? "—" : "—",
     })),
     summary: { ...summary, due: round2(summary.total - summary.paid) },
     bySalesperson: groupSum(
-      revenueRows,
+      rows,
       (r) => r.salespersonId ?? "none",
       (r) => r.salespersonName ?? "Unassigned",
-      (r) => sign(r.docType) * parseFloat(r.totalAmount)
+      (r) => parseFloat(r.totalAmount)
     ),
     byBranch: groupSum(
-      revenueRows,
+      rows,
       (r) => r.warehouseId ?? "none",
       (r) => (r.warehouseId ? warehouseLabel.get(r.warehouseId) ?? "—" : "Unassigned"),
-      (r) => sign(r.docType) * parseFloat(r.totalAmount)
+      (r) => parseFloat(r.totalAmount)
     ),
     byCounter: groupSum(
-      revenueRows,
+      rows,
       (r) => r.counterId ?? "none",
       (r) => (r.counterId ? counterLabel.get(r.counterId) ?? "—" : "Unassigned"),
-      (r) => sign(r.docType) * parseFloat(r.totalAmount)
+      (r) => parseFloat(r.totalAmount)
     ),
     byDay: groupSum(
-      revenueRows,
+      rows,
       (r) => toDateKey(new Date(r.createdAt)),
       (r) => toDateKey(new Date(r.createdAt)),
-      (r) => sign(r.docType) * parseFloat(r.totalAmount)
+      (r) => parseFloat(r.totalAmount)
     ).sort((a, b) => a.key.localeCompare(b.key)),
   };
 }
 
-export async function getPurchaseReport(range: { from: string; to: string }) {
+export async function getPurchaseDocReport(docType: PurchaseDocType, range: { from: string; to: string }) {
   const membership = await requireReports();
   const db = await getDb();
   const { from, to } = parseRange(range);
@@ -164,6 +173,7 @@ export async function getPurchaseReport(range: { from: string; to: string }) {
     .where(
       and(
         eq(purchases.businessId, membership.businessId),
+        eq(purchases.docType, docType),
         eq(purchases.status, "completed"),
         gte(purchases.createdAt, from),
         lte(purchases.createdAt, to)
@@ -171,31 +181,26 @@ export async function getPurchaseReport(range: { from: string; to: string }) {
     )
     .orderBy(desc(purchases.createdAt));
 
-  // Purchase orders are drafts, not completed inward supply — the register
-  // only ever shows actual purchases and their returns.
-  const costRows = rows.filter((r) => r.docType === "purchase" || r.docType === "purchase_return");
-  const sign = (docType: string) => (docType === "purchase_return" ? -1 : 1);
-
-  const summary = costRows.reduce(
+  const summary = rows.reduce(
     (acc, r) => ({
-      subtotal: round2(acc.subtotal + sign(r.docType) * parseFloat(r.subtotal)),
-      discount: round2(acc.discount + sign(r.docType) * parseFloat(r.discountAmount)),
-      tax: round2(acc.tax + sign(r.docType) * parseFloat(r.taxAmount)),
-      total: round2(acc.total + sign(r.docType) * parseFloat(r.totalAmount)),
-      paid: round2(acc.paid + sign(r.docType) * parseFloat(r.amountPaid)),
+      subtotal: round2(acc.subtotal + parseFloat(r.subtotal)),
+      discount: round2(acc.discount + parseFloat(r.discountAmount)),
+      tax: round2(acc.tax + parseFloat(r.taxAmount)),
+      total: round2(acc.total + parseFloat(r.totalAmount)),
+      paid: round2(acc.paid + parseFloat(r.amountPaid)),
       count: acc.count + 1,
     }),
     { subtotal: 0, discount: 0, tax: 0, total: 0, paid: 0, count: 0 }
   );
 
   return {
-    rows: costRows,
+    rows,
     summary: { ...summary, due: round2(summary.total - summary.paid) },
     bySupplier: groupSum(
-      costRows,
+      rows,
       (r) => r.supplierId,
       (r) => r.supplierName,
-      (r) => sign(r.docType) * parseFloat(r.totalAmount)
+      (r) => parseFloat(r.totalAmount)
     ),
   };
 }

@@ -1,6 +1,6 @@
 "use server";
 
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import { getDb } from "@/db/client";
 import {
   products,
@@ -13,6 +13,7 @@ import {
   colors,
   hsnCodes,
   taxRates,
+  productImages,
 } from "@/db/schema";
 import { requireSessionUser, getActiveMembership } from "@/lib/auth/session";
 import { can, PERMISSIONS } from "@/lib/auth/permissions";
@@ -151,5 +152,82 @@ export async function toggleProductActive(id: string, isActive: boolean): Promis
   if (!gate.ok) return gate;
   const db = await getDb();
   await db.update(products).set({ isActive, updatedAt: new Date() }).where(and(eq(products.id, id), eq(products.businessId, gate.membership.businessId)));
+  return { ok: true };
+}
+
+/**
+ * Which products have a photo, with no image bytes attached — cheap enough to
+ * load alongside the full product list so the master list can show a "has
+ * photo" indicator without every page that queries products paying for image
+ * payloads it never displays.
+ */
+export async function getProductImageIds(): Promise<string[]> {
+  const sessionUser = await requireSessionUser();
+  const membership = await getActiveMembership(sessionUser);
+  if (!membership || !can(membership.role, PERMISSIONS.PRODUCTS_VIEW)) throw new Error("FORBIDDEN");
+
+  const db = await getDb();
+  const rows = await db.select({ productId: productImages.productId }).from(productImages).where(eq(productImages.businessId, membership.businessId));
+  return rows.map((r) => r.productId);
+}
+
+/** One product's photo, fetched only when something is actually about to show it (the edit dialog, or the catalogue). */
+export async function getProductImage(productId: string): Promise<string | null> {
+  const sessionUser = await requireSessionUser();
+  const membership = await getActiveMembership(sessionUser);
+  if (!membership || !can(membership.role, PERMISSIONS.PRODUCTS_VIEW)) throw new Error("FORBIDDEN");
+
+  const db = await getDb();
+  const [row] = await db
+    .select({ dataUrl: productImages.dataUrl })
+    .from(productImages)
+    .where(and(eq(productImages.productId, productId), eq(productImages.businessId, membership.businessId)))
+    .limit(1);
+  return row?.dataUrl ?? null;
+}
+
+/** A batch of products' photos at once, for building a catalogue page. */
+export async function getProductImagesFor(productIds: string[]): Promise<Record<string, string>> {
+  const sessionUser = await requireSessionUser();
+  const membership = await getActiveMembership(sessionUser);
+  if (!membership || !can(membership.role, PERMISSIONS.PRODUCTS_VIEW)) throw new Error("FORBIDDEN");
+  if (productIds.length === 0) return {};
+
+  const db = await getDb();
+  const rows = await db
+    .select({ productId: productImages.productId, dataUrl: productImages.dataUrl })
+    .from(productImages)
+    .where(and(inArray(productImages.productId, productIds), eq(productImages.businessId, membership.businessId)));
+  return Object.fromEntries(rows.map((r) => [r.productId, r.dataUrl]));
+}
+
+/** A resized data: URI under ~700KB of text, generously above what the client-side resize ever produces. */
+const MAX_IMAGE_DATA_URL_LENGTH = 700_000;
+
+/** Replaces (or, given `null`, removes) a product's photo. */
+export async function setProductImage(productId: string, dataUrl: string | null): Promise<ActionResult> {
+  const gate = await requireGate(PERMISSIONS.PRODUCTS_MANAGE);
+  if (!gate.ok) return gate;
+
+  const db = await getDb();
+  const [product] = await db
+    .select({ id: products.id })
+    .from(products)
+    .where(and(eq(products.id, productId), eq(products.businessId, gate.membership.businessId)))
+    .limit(1);
+  if (!product) return { ok: false, error: "Product not found." };
+
+  if (dataUrl === null) {
+    await db.delete(productImages).where(eq(productImages.productId, productId));
+    return { ok: true };
+  }
+
+  if (!dataUrl.startsWith("data:image/")) return { ok: false, error: "That doesn't look like an image." };
+  if (dataUrl.length > MAX_IMAGE_DATA_URL_LENGTH) return { ok: false, error: "That image is too large — try a smaller photo." };
+
+  await db
+    .insert(productImages)
+    .values({ productId, businessId: gate.membership.businessId, dataUrl, updatedAt: new Date() })
+    .onConflictDoUpdate({ target: productImages.productId, set: { dataUrl, updatedAt: new Date() } });
   return { ok: true };
 }

@@ -2,8 +2,27 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import { Download, Printer, Receipt, Package, Boxes, Percent, ArrowUp, ArrowDown, ChevronsUpDown, Sheet } from "lucide-react";
-import { getSalesReport, getPurchaseReport, getStockReport, getGstReport, exportWorkbook } from "@/app/actions/reports";
+import {
+  Download,
+  Printer,
+  Receipt,
+  Package,
+  Boxes,
+  Percent,
+  ArrowUp,
+  ArrowDown,
+  ChevronsUpDown,
+  Sheet,
+  Undo2,
+  FileText,
+  Calculator,
+  ClipboardList,
+  Truck,
+  type LucideIcon,
+} from "lucide-react";
+import { getSalesDocReport, getPurchaseDocReport, getStockReport, getGstReport, exportWorkbook } from "@/app/actions/reports";
+import { SALE_DOC_TYPES, SALE_DOC_TYPE_LABELS } from "@/lib/validation/sales";
+import { PURCHASE_DOC_TYPES, PURCHASE_DOC_TYPE_LABELS } from "@/lib/validation/purchases";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
@@ -14,10 +33,27 @@ import { round2 } from "@/lib/sales/totals";
 import { getFilesystemService, base64ToBytes } from "@/lib/fs";
 import { getPrintService } from "@/lib/print";
 
-type SalesReport = Awaited<ReturnType<typeof getSalesReport>>;
-type PurchaseReport = Awaited<ReturnType<typeof getPurchaseReport>>;
+type SaleDocType = (typeof SALE_DOC_TYPES)[number];
+type PurchaseDocType = (typeof PURCHASE_DOC_TYPES)[number];
+type SalesDocReport = Awaited<ReturnType<typeof getSalesDocReport>>;
+type PurchaseDocReport = Awaited<ReturnType<typeof getPurchaseDocReport>>;
 type StockReport = Awaited<ReturnType<typeof getStockReport>>;
 type GstReport = Awaited<ReturnType<typeof getGstReport>>;
+
+/** Every sale-side and purchase-side document gets its own register tab — never merged with another doc type. */
+const SALE_TAB_ICONS: Record<SaleDocType, LucideIcon> = {
+  sale: Receipt,
+  sale_return: Undo2,
+  quotation: FileText,
+  estimate: Calculator,
+  sale_order: ClipboardList,
+  challan: Truck,
+};
+const PURCHASE_TAB_ICONS: Record<PurchaseDocType, LucideIcon> = {
+  purchase_order: ClipboardList,
+  purchase: Package,
+  purchase_return: Undo2,
+};
 
 const money = (n: number) => `₹${n.toFixed(2)}`;
 
@@ -77,26 +113,34 @@ function compareCells(a: string, b: string): number {
   return String(left).localeCompare(String(right));
 }
 
-export function ReportsManager({ initialSalesReport }: { initialSalesReport: SalesReport }) {
+const isSaleDocType = (v: string): v is SaleDocType => (SALE_DOC_TYPES as readonly string[]).includes(v);
+const isPurchaseDocType = (v: string): v is PurchaseDocType => (PURCHASE_DOC_TYPES as readonly string[]).includes(v);
+
+export function ReportsManager({ initialSalesReport }: { initialSalesReport: SalesDocReport }) {
   const [from, setFrom] = React.useState(daysAgoKey(30));
   const [to, setTo] = React.useState(todayKey());
-  const [tab, setTab] = React.useState("sales");
+  const [tab, setTab] = React.useState<string>("sale");
   const [loading, setLoading] = React.useState(false);
 
-  // The default sales view is rendered by the server; every other view loads
-  // when the user asks for it, so nothing fetches on mount.
-  const [salesReport, setSalesReport] = React.useState<SalesReport | null>(initialSalesReport);
-  const [purchaseReport, setPurchaseReport] = React.useState<PurchaseReport | null>(null);
+  // The default (Sales) view is rendered by the server; every other doc-type
+  // register loads only once its tab is opened, so nothing else fetches on mount.
+  const [saleDocReports, setSaleDocReports] = React.useState<Partial<Record<SaleDocType, SalesDocReport>>>({ sale: initialSalesReport });
+  const [purchaseDocReports, setPurchaseDocReports] = React.useState<Partial<Record<PurchaseDocType, PurchaseDocReport>>>({});
   const [stockReport, setStockReport] = React.useState<StockReport | null>(null);
   const [gstReport, setGstReport] = React.useState<GstReport | null>(null);
 
   async function load(which: string, range = { from, to }) {
     setLoading(true);
     try {
-      if (which === "sales") setSalesReport(await getSalesReport(range));
-      else if (which === "purchase") setPurchaseReport(await getPurchaseReport(range));
-      else if (which === "stock") setStockReport(await getStockReport());
+      if (which === "stock") setStockReport(await getStockReport());
       else if (which === "gst") setGstReport(await getGstReport(range));
+      else if (isSaleDocType(which)) {
+        const report = await getSalesDocReport(which, range);
+        setSaleDocReports((prev) => ({ ...prev, [which]: report }));
+      } else if (isPurchaseDocType(which)) {
+        const report = await getPurchaseDocReport(which, range);
+        setPurchaseDocReports((prev) => ({ ...prev, [which]: report }));
+      }
     } catch {
       toast.error("Could not load that report.");
     } finally {
@@ -150,15 +194,25 @@ export function ReportsManager({ initialSalesReport }: { initialSalesReport: Sal
           bar carry `print:hidden`, so they drop out of it. */}
       <div ref={reportRef} className="space-y-4">
         <Tabs value={tab} onValueChange={switchTab} className="space-y-4">
-          <TabsList className="print:hidden">
-            <TabsTrigger value="sales">
-              <Receipt className="h-4 w-4" />
-              Sales
-            </TabsTrigger>
-            <TabsTrigger value="purchase">
-              <Package className="h-4 w-4" />
-              Purchase
-            </TabsTrigger>
+          <TabsList className="h-auto flex-wrap print:hidden">
+            {SALE_DOC_TYPES.map((t) => {
+              const Icon = SALE_TAB_ICONS[t];
+              return (
+                <TabsTrigger key={t} value={t}>
+                  <Icon className="h-4 w-4" />
+                  {SALE_DOC_TYPE_LABELS[t]}
+                </TabsTrigger>
+              );
+            })}
+            {PURCHASE_DOC_TYPES.map((t) => {
+              const Icon = PURCHASE_TAB_ICONS[t];
+              return (
+                <TabsTrigger key={t} value={t}>
+                  <Icon className="h-4 w-4" />
+                  {PURCHASE_DOC_TYPE_LABELS[t]}
+                </TabsTrigger>
+              );
+            })}
             <TabsTrigger value="stock">
               <Boxes className="h-4 w-4" />
               Stock
@@ -169,104 +223,17 @@ export function ReportsManager({ initialSalesReport }: { initialSalesReport: Sal
             </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="sales" className="space-y-4">
-            {salesReport && (
-              <>
-                <SummaryStrip
-                  items={[
-                    { label: "Bills", value: String(salesReport.summary.count) },
-                    { label: "Taxable", value: money(salesReport.summary.subtotal - salesReport.summary.discount) },
-                    { label: "Tax", value: money(salesReport.summary.tax) },
-                    { label: "Total", value: money(salesReport.summary.total) },
-                    { label: "Received", value: money(salesReport.summary.paid) },
-                    { label: "Outstanding", value: money(salesReport.summary.due) },
-                  ]}
-                />
-                <ReportTable
-                  title="Sales register"
-                  exportName={`sales-${from}-to-${to}`}
-                  exportHeaders={["Date", "Doc No", "Type", "Customer", "Salesperson", "Branch", "Counter", "Taxable", "Tax", "Total", "Paid"]}
-                  exportRows={salesReport.rows.map((r) => [
-                    formatDate(r.createdAt),
-                    r.docNumber,
-                    r.docType,
-                    r.customerName ?? "Walk-in",
-                    r.salespersonName ?? "—",
-                    r.warehouseLabel,
-                    r.counterLabel,
-                    round2(parseFloat(r.subtotal) - parseFloat(r.discountAmount)),
-                    parseFloat(r.taxAmount),
-                    parseFloat(r.totalAmount),
-                    parseFloat(r.amountPaid),
-                  ])}
-                  headers={["Date", "Doc No", "Type", "Customer", "Salesperson", "Branch", "Counter", "Total", "Paid"]}
-                  rows={salesReport.rows.map((r) => [
-                    formatDate(r.createdAt),
-                    r.docNumber,
-                    r.docType.replace("_", " "),
-                    r.customerName ?? "Walk-in",
-                    r.salespersonName ?? "—",
-                    r.warehouseLabel,
-                    r.counterLabel,
-                    money(parseFloat(r.totalAmount)),
-                    money(parseFloat(r.amountPaid)),
-                  ])}
-                  emptyLabel="No sales in this period."
-                />
-                <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
-                  <BreakdownCard title="Salesperson-wise" rows={salesReport.bySalesperson} />
-                  <BreakdownCard title="Branch-wise" rows={salesReport.byBranch} />
-                  <BreakdownCard title="Counter-wise" rows={salesReport.byCounter} />
-                  <BreakdownCard title="Day-wise" rows={salesReport.byDay} />
-                </div>
-              </>
-            )}
-          </TabsContent>
+          {SALE_DOC_TYPES.map((t) => (
+            <TabsContent key={t} value={t} className="space-y-4">
+              <SalesDocReportView report={saleDocReports[t]} label={SALE_DOC_TYPE_LABELS[t]} from={from} to={to} />
+            </TabsContent>
+          ))}
 
-          <TabsContent value="purchase" className="space-y-4">
-            {purchaseReport && (
-              <>
-                <SummaryStrip
-                  items={[
-                    { label: "Documents", value: String(purchaseReport.summary.count) },
-                    { label: "Taxable", value: money(purchaseReport.summary.subtotal - purchaseReport.summary.discount) },
-                    { label: "Tax", value: money(purchaseReport.summary.tax) },
-                    { label: "Total", value: money(purchaseReport.summary.total) },
-                    { label: "Paid", value: money(purchaseReport.summary.paid) },
-                    { label: "Owed", value: money(purchaseReport.summary.due) },
-                  ]}
-                />
-                <ReportTable
-                  title="Purchase register"
-                  exportName={`purchases-${from}-to-${to}`}
-                  exportHeaders={["Date", "Doc No", "Type", "Supplier", "Supplier Invoice", "Taxable", "Tax", "Total", "Paid"]}
-                  exportRows={purchaseReport.rows.map((r) => [
-                    formatDate(r.createdAt),
-                    r.docNumber,
-                    r.docType,
-                    r.supplierName,
-                    r.supplierInvoiceNumber ?? "",
-                    round2(parseFloat(r.subtotal) - parseFloat(r.discountAmount)),
-                    parseFloat(r.taxAmount),
-                    parseFloat(r.totalAmount),
-                    parseFloat(r.amountPaid),
-                  ])}
-                  headers={["Date", "Doc No", "Type", "Supplier", "Invoice No", "Total", "Paid"]}
-                  rows={purchaseReport.rows.map((r) => [
-                    formatDate(r.createdAt),
-                    r.docNumber,
-                    r.docType.replace("_", " "),
-                    r.supplierName,
-                    r.supplierInvoiceNumber ?? "—",
-                    money(parseFloat(r.totalAmount)),
-                    money(parseFloat(r.amountPaid)),
-                  ])}
-                  emptyLabel="No purchases in this period."
-                />
-                <BreakdownCard title="Supplier-wise" rows={purchaseReport.bySupplier} />
-              </>
-            )}
-          </TabsContent>
+          {PURCHASE_DOC_TYPES.map((t) => (
+            <TabsContent key={t} value={t} className="space-y-4">
+              <PurchaseDocReportView report={purchaseDocReports[t]} label={PURCHASE_DOC_TYPE_LABELS[t]} from={from} to={to} />
+            </TabsContent>
+          ))}
 
           <TabsContent value="stock" className="space-y-4">
             {stockReport && (
@@ -385,6 +352,125 @@ export function ReportsManager({ initialSalesReport }: { initialSalesReport: Sal
         </Tabs>
       </div>
     </div>
+  );
+}
+
+/** A single sale-side document type's own register — never another doc type's rows mixed in. */
+function SalesDocReportView({
+  report,
+  label,
+  from,
+  to,
+}: {
+  report: SalesDocReport | undefined;
+  label: string;
+  from: string;
+  to: string;
+}) {
+  if (!report) return null;
+  return (
+    <>
+      <SummaryStrip
+        items={[
+          { label: "Count", value: String(report.summary.count) },
+          { label: "Taxable", value: money(report.summary.subtotal - report.summary.discount) },
+          { label: "Tax", value: money(report.summary.tax) },
+          { label: "Total", value: money(report.summary.total) },
+          { label: "Received", value: money(report.summary.paid) },
+          { label: "Outstanding", value: money(report.summary.due) },
+        ]}
+      />
+      <ReportTable
+        title={`${label} register`}
+        exportName={`${label.toLowerCase().replace(/\s+/g, "-")}-${from}-to-${to}`}
+        exportHeaders={["Date", "Doc No", "Customer", "Salesperson", "Branch", "Counter", "Taxable", "Tax", "Total", "Paid"]}
+        exportRows={report.rows.map((r) => [
+          formatDate(r.createdAt),
+          r.docNumber,
+          r.customerName ?? "Walk-in",
+          r.salespersonName ?? "—",
+          r.warehouseLabel,
+          r.counterLabel,
+          round2(parseFloat(r.subtotal) - parseFloat(r.discountAmount)),
+          parseFloat(r.taxAmount),
+          parseFloat(r.totalAmount),
+          parseFloat(r.amountPaid),
+        ])}
+        headers={["Date", "Doc No", "Customer", "Salesperson", "Branch", "Counter", "Total", "Paid"]}
+        rows={report.rows.map((r) => [
+          formatDate(r.createdAt),
+          r.docNumber,
+          r.customerName ?? "Walk-in",
+          r.salespersonName ?? "—",
+          r.warehouseLabel,
+          r.counterLabel,
+          money(parseFloat(r.totalAmount)),
+          money(parseFloat(r.amountPaid)),
+        ])}
+        emptyLabel={`No ${label.toLowerCase()} documents in this period.`}
+      />
+      <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
+        <BreakdownCard title="Salesperson-wise" rows={report.bySalesperson} />
+        <BreakdownCard title="Branch-wise" rows={report.byBranch} />
+        <BreakdownCard title="Counter-wise" rows={report.byCounter} />
+        <BreakdownCard title="Day-wise" rows={report.byDay} />
+      </div>
+    </>
+  );
+}
+
+/** A single purchase-side document type's own register. */
+function PurchaseDocReportView({
+  report,
+  label,
+  from,
+  to,
+}: {
+  report: PurchaseDocReport | undefined;
+  label: string;
+  from: string;
+  to: string;
+}) {
+  if (!report) return null;
+  return (
+    <>
+      <SummaryStrip
+        items={[
+          { label: "Count", value: String(report.summary.count) },
+          { label: "Taxable", value: money(report.summary.subtotal - report.summary.discount) },
+          { label: "Tax", value: money(report.summary.tax) },
+          { label: "Total", value: money(report.summary.total) },
+          { label: "Paid", value: money(report.summary.paid) },
+          { label: "Owed", value: money(report.summary.due) },
+        ]}
+      />
+      <ReportTable
+        title={`${label} register`}
+        exportName={`${label.toLowerCase().replace(/\s+/g, "-")}-${from}-to-${to}`}
+        exportHeaders={["Date", "Doc No", "Supplier", "Supplier Invoice", "Taxable", "Tax", "Total", "Paid"]}
+        exportRows={report.rows.map((r) => [
+          formatDate(r.createdAt),
+          r.docNumber,
+          r.supplierName,
+          r.supplierInvoiceNumber ?? "",
+          round2(parseFloat(r.subtotal) - parseFloat(r.discountAmount)),
+          parseFloat(r.taxAmount),
+          parseFloat(r.totalAmount),
+          parseFloat(r.amountPaid),
+        ])}
+        headers={["Date", "Doc No", "Supplier", "Invoice No", "Total", "Paid"]}
+        rows={report.rows.map((r) => [
+          formatDate(r.createdAt),
+          r.docNumber,
+          r.supplierName,
+          r.supplierInvoiceNumber ?? "—",
+          money(parseFloat(r.totalAmount)),
+          money(parseFloat(r.amountPaid)),
+        ])}
+        emptyLabel={`No ${label.toLowerCase()} documents in this period.`}
+      />
+      <BreakdownCard title="Supplier-wise" rows={report.bySupplier} />
+    </>
   );
 }
 
