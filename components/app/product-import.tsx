@@ -3,14 +3,17 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Upload, FileDown, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { Upload, FileDown, AlertTriangle, CheckCircle2, History, Undo2 } from "lucide-react";
 import {
   previewProductImport,
   commitProductImport,
   getProductImportTemplate,
+  listRecentImportBatches,
+  undoProductImportBatch,
   type ImportPreview,
 } from "@/app/actions/product-import";
 import { getFilesystemService, base64ToBytes } from "@/lib/fs";
+import { formatDateTime } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -39,6 +42,8 @@ const MAX_BYTES = 8 * 1024 * 1024;
  * exactly how many products would be created, how many updated and what the
  * importer could not make sense of, before anything is written.
  */
+type ImportBatch = Awaited<ReturnType<typeof listRecentImportBatches>>[number];
+
 export function ProductImport({ canManage }: { canManage: boolean }) {
   const router = useRouter();
   const inputRef = React.useRef<HTMLInputElement>(null);
@@ -46,6 +51,51 @@ export function ProductImport({ canManage }: { canManage: boolean }) {
   const [preview, setPreview] = React.useState<ImportPreview | null>(null);
   const [createMissingMasters, setCreateMissingMasters] = React.useState(true);
   const [busy, setBusy] = React.useState<"idle" | "template" | "preview" | "commit">("idle");
+  const [batches, setBatches] = React.useState<ImportBatch[] | null>(null);
+  const [undoingId, setUndoingId] = React.useState<string | null>(null);
+
+  const loadBatches = React.useCallback(async () => {
+    try {
+      setBatches(await listRecentImportBatches());
+    } catch {
+      // Recent-imports history is a convenience, not required for importing — fail quietly.
+    }
+  }, []);
+
+  React.useEffect(() => {
+    if (!canManage) return;
+    let cancelled = false;
+    void listRecentImportBatches().then((result) => {
+      if (!cancelled) setBatches(result);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [canManage]);
+
+  async function handleUndo(batch: ImportBatch) {
+    if (
+      !confirm(
+        `Undo "${batch.fileName}"? This permanently deletes the ${batch.remaining} product${batch.remaining === 1 ? "" : "s"} it created. Products it only updated are not touched.`
+      )
+    )
+      return;
+    setUndoingId(batch.id);
+    try {
+      const result = await undoProductImportBatch(batch.id);
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success(
+        `Removed ${result.deleted} product${result.deleted === 1 ? "" : "s"}${result.blocked > 0 ? ` — ${result.blocked} couldn't be removed because they're already used in a sale, purchase or stock record.` : "."}`
+      );
+      await loadBatches();
+      router.refresh();
+    } finally {
+      setUndoingId(null);
+    }
+  }
 
   if (!canManage) return null;
 
@@ -89,9 +139,11 @@ export function ProductImport({ canManage }: { canManage: boolean }) {
         return;
       }
       toast.success(
-        `Imported — ${result.created} new, ${result.updated} updated${result.skipped > 0 ? `, ${result.skipped} skipped` : ""}.`
+        `Imported — ${result.created} new, ${result.updated} updated${result.skipped > 0 ? `, ${result.skipped} skipped` : ""}.` +
+          (result.batchId ? " You can undo the new products from Recent Imports below if anything looks wrong." : "")
       );
       reset();
+      await loadBatches();
       router.refresh();
     } finally {
       setBusy("idle");
@@ -225,6 +277,14 @@ export function ProductImport({ canManage }: { canManage: boolean }) {
               <p className="text-xs text-muted-foreground">Showing the first 100 rows; all {preview.rows.length} will be imported.</p>
             )}
 
+            {importable > 0 && (
+              <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
+                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-yellow-500" />
+                Double-check this list before importing. New products can be undone from Recent Imports below if this turns out to be the
+                wrong file — but products it only updates get overwritten in place, and that part can&apos;t be automatically reverted.
+              </p>
+            )}
+
             <div className="flex items-center gap-2">
               <Button disabled={busy !== "idle" || importable === 0} onClick={handleCommit}>
                 <CheckCircle2 className="h-4 w-4" />
@@ -234,6 +294,56 @@ export function ProductImport({ canManage }: { canManage: boolean }) {
                 Cancel
               </Button>
             </div>
+          </div>
+        )}
+
+        {batches && batches.length > 0 && (
+          <div className="space-y-2 rounded-lg border border-border p-4">
+            <div className="flex items-center gap-2">
+              <History className="h-4 w-4 text-muted-foreground" />
+              <p className="text-sm font-semibold">Recent imports</p>
+            </div>
+            <div className="overflow-x-auto rounded-lg border border-border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>File</TableHead>
+                    <TableHead>When</TableHead>
+                    <TableHead className="w-20">Created</TableHead>
+                    <TableHead className="w-20">Updated</TableHead>
+                    <TableHead className="w-20">Skipped</TableHead>
+                    <TableHead className="w-40" />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {batches.map((b) => (
+                    <TableRow key={b.id}>
+                      <TableCell className="font-medium">{b.fileName}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">{formatDateTime(b.createdAt)}</TableCell>
+                      <TableCell>{b.createdCount}</TableCell>
+                      <TableCell>{b.updatedCount}</TableCell>
+                      <TableCell>{b.skippedCount}</TableCell>
+                      <TableCell className="text-right">
+                        {b.remaining > 0 ? (
+                          <Button variant="ghost" size="sm" disabled={undoingId === b.id} onClick={() => void handleUndo(b)}>
+                            <Undo2 className="h-3.5 w-3.5 text-destructive" />
+                            {undoingId === b.id ? "Undoing…" : `Undo (${b.remaining})`}
+                          </Button>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">
+                            {b.createdCount > 0 ? "Already undone" : "Nothing to undo"}
+                          </span>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              &quot;Undo&quot; deletes only the products that import created. A product already used in a sale, purchase or stock record
+              can&apos;t be deleted and is left in place.
+            </p>
           </div>
         )}
       </CardContent>

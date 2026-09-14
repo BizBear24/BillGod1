@@ -1,6 +1,26 @@
-import { pgTable, text, timestamp, numeric, boolean, unique } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, numeric, integer, boolean, unique } from "drizzle-orm/pg-core";
 import { businesses } from "./tenancy";
 import { categories, sections, subsections, brands, units, sizes, colors, hsnCodes, taxRates } from "./masters";
+import { users } from "./auth";
+
+/**
+ * One row per Excel/CSV import run. Exists so "I imported junk" has an undo:
+ * every product a run *creates* is tagged with its batch id (see
+ * `products.importBatchId` below), and deleting the batch sweeps them back
+ * out. Products the same run only *updated* are deliberately left untagged —
+ * they existed before the import, so removing them would destroy real data,
+ * not junk.
+ */
+export const productImportBatches = pgTable("product_import_batches", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  businessId: text("business_id").notNull().references(() => businesses.id, { onDelete: "cascade" }),
+  fileName: text("file_name").notNull(),
+  createdCount: integer("created_count").notNull().default(0),
+  updatedCount: integer("updated_count").notNull().default(0),
+  skippedCount: integer("skipped_count").notNull().default(0),
+  createdByUserId: text("created_by_user_id").notNull().references(() => users.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
 
 export const products = pgTable(
   "products",
@@ -37,6 +57,9 @@ export const products = pgTable(
 
     imageUrl: text("image_url"),
     isActive: boolean("is_active").notNull().default(true),
+
+    /** Set only when this row was *created* by an import run — never on an update, and never cleared by later manual edits. */
+    importBatchId: text("import_batch_id").references(() => productImportBatches.id, { onDelete: "set null" }),
 
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

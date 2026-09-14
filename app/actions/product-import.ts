@@ -1,8 +1,8 @@
 "use server";
 
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray, desc, sql } from "drizzle-orm";
 import { getDb } from "@/db/client";
-import { products, categories, brands, units, sizes, colors, hsnCodes, taxRates, productImages } from "@/db/schema";
+import { products, categories, brands, units, sizes, colors, hsnCodes, taxRates, productImages, productImportBatches } from "@/db/schema";
 import { requireSessionUser, getActiveMembership } from "@/lib/auth/session";
 import { can, PERMISSIONS } from "@/lib/auth/permissions";
 import { logAudit } from "@/lib/audit";
@@ -51,7 +51,9 @@ export type ImportPreview = {
   errors: ImportRowIssue[];
 };
 
-export type ImportOutcome = { ok: true; created: number; updated: number; skipped: number } | { ok: false; error: string };
+export type ImportOutcome =
+  | { ok: true; created: number; updated: number; skipped: number; batchId: string | null }
+  | { ok: false; error: string };
 
 async function requireImportGate() {
   const sessionUser = await requireSessionUser();
@@ -441,6 +443,10 @@ export async function commitProductImport(
     const db = await getDb();
     let created = 0;
     let updated = 0;
+    // Generated up front so newly-created rows can be tagged with it as they're
+    // written — only creates ever carry it, so "undo this import" can never
+    // delete a product that already existed before the run.
+    const batchId = crypto.randomUUID();
 
     await db.transaction(async (tx) => {
       const existing = await tx
@@ -448,6 +454,23 @@ export async function commitProductImport(
         .from(products)
         .where(eq(products.businessId, businessId));
       const idByCode = new Map(existing.map((p) => [key(p.itemCode), p.id]));
+
+      // The batch row has to exist before any product can reference it (the
+      // FK is enforced), so it's written from a predicted count up front and
+      // corrected below once the real counts are known — never the other
+      // way round.
+      const willCreate = parsed.filter((entry) => !idByCode.has(key(entry.itemCode))).length;
+      if (willCreate > 0) {
+        await tx.insert(productImportBatches).values({
+          id: batchId,
+          businessId,
+          fileName,
+          createdCount: willCreate,
+          updatedCount: parsed.length - willCreate,
+          skippedCount: errors.length,
+          createdByUserId: gate.sessionUser.userId,
+        });
+      }
 
       for (const entry of parsed) {
         const values = entry.values as Record<string, unknown>;
@@ -488,7 +511,7 @@ export async function commitProductImport(
           productId = existingId;
           updated += 1;
         } else {
-          const [created_] = await tx.insert(products).values(dbValues).returning();
+          const [created_] = await tx.insert(products).values({ ...dbValues, importBatchId: batchId }).returning();
           productId = created_.id;
           created += 1;
         }
@@ -507,13 +530,98 @@ export async function commitProductImport(
       userId: gate.sessionUser.userId,
       action: "product.imported",
       entityType: "product",
-      after: { fileName, created, updated, skipped: errors.length },
+      after: { fileName, created, updated, skipped: errors.length, batchId: created > 0 ? batchId : null },
     });
 
-    return { ok: true, created, updated, skipped: errors.length };
+    return { ok: true, created, updated, skipped: errors.length, batchId: created > 0 ? batchId : null };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : "Could not import that file." };
   }
+}
+
+/** Recent import runs, newest first, with how many of each batch's *created* products still exist to undo. */
+export async function listRecentImportBatches(limit = 10): Promise<
+  { id: string; fileName: string; createdCount: number; updatedCount: number; skippedCount: number; createdAt: Date; remaining: number }[]
+> {
+  const sessionUser = await requireSessionUser();
+  const membership = await getActiveMembership(sessionUser);
+  if (!membership || !can(membership.role, PERMISSIONS.PRODUCTS_VIEW)) throw new Error("FORBIDDEN");
+
+  const db = await getDb();
+  const batches = await db
+    .select()
+    .from(productImportBatches)
+    .where(eq(productImportBatches.businessId, membership.businessId))
+    .orderBy(desc(productImportBatches.createdAt))
+    .limit(limit);
+  if (batches.length === 0) return [];
+
+  const remainingRows = await db
+    .select({ batchId: products.importBatchId, count: sql<number>`count(*)::int` })
+    .from(products)
+    .where(inArray(products.importBatchId, batches.map((b) => b.id)))
+    .groupBy(products.importBatchId);
+  const remainingByBatch = new Map(remainingRows.map((r) => [r.batchId, r.count]));
+
+  return batches.map((b) => ({
+    id: b.id,
+    fileName: b.fileName,
+    createdCount: b.createdCount,
+    updatedCount: b.updatedCount,
+    skippedCount: b.skippedCount,
+    createdAt: b.createdAt,
+    remaining: remainingByBatch.get(b.id) ?? 0,
+  }));
+}
+
+export type UndoImportOutcome = { ok: true; deleted: number; blocked: number } | { ok: false; error: string };
+
+/**
+ * Deletes every product a past import *created* (never ones it only
+ * updated — those existed before the run, so removing them would destroy
+ * real data, not junk). A product already used in a sale, purchase or stock
+ * movement can't be deleted at all (the database refuses it) — those are
+ * counted as "blocked" and left alone rather than failing the whole undo.
+ */
+export async function undoProductImportBatch(batchId: string): Promise<UndoImportOutcome> {
+  const gate = await requireImportGate();
+  if (!gate) return { ok: false, error: "You don't have permission to undo an import." };
+
+  const db = await getDb();
+  const [batch] = await db
+    .select({ id: productImportBatches.id })
+    .from(productImportBatches)
+    .where(and(eq(productImportBatches.id, batchId), eq(productImportBatches.businessId, gate.membership.businessId)))
+    .limit(1);
+  if (!batch) return { ok: false, error: "That import could not be found." };
+
+  const rows = await db
+    .select({ id: products.id })
+    .from(products)
+    .where(and(eq(products.importBatchId, batchId), eq(products.businessId, gate.membership.businessId)));
+
+  let deleted = 0;
+  let blocked = 0;
+  for (const row of rows) {
+    try {
+      await db.delete(products).where(eq(products.id, row.id));
+      deleted += 1;
+    } catch {
+      // Referenced by a sale/purchase/stock movement — the FK simply refuses the delete.
+      blocked += 1;
+    }
+  }
+
+  await logAudit({
+    businessId: gate.membership.businessId,
+    userId: gate.sessionUser.userId,
+    action: "product.import_undone",
+    entityType: "product_import_batch",
+    entityId: batchId,
+    after: { deleted, blocked },
+  });
+
+  return { ok: true, deleted, blocked };
 }
 
 /** A ready-to-fill .xlsx with the exact headings the importer understands. */
