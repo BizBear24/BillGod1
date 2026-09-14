@@ -364,7 +364,13 @@ export function PurchasePos({
           <div className="flex items-center justify-between rounded-lg border border-chart-3/40 bg-chart-3/5 px-4 py-2 text-sm">
             <span>{justCompleted.docNumber} completed.</span>
             <div className="flex items-center gap-2">
-              <PrintPurchaseButton purchaseId={justCompleted.id} company={company} design={invoiceDesign} label={`Print ${justCompleted.docNumber}`} />
+              <PrintPurchaseButton
+                purchaseId={justCompleted.id}
+                company={company}
+                design={invoiceDesign}
+                label={`Print ${justCompleted.docNumber}`}
+                docType={justCompleted.docType}
+              />
               {justCompleted.docType === "purchase" && <PrintBarcodesLink purchaseId={justCompleted.id} />}
               {justCompleted.docType === "purchase_order" && (
                 <EmailPurchaseOrderButton purchaseId={justCompleted.id} companyName={company?.name ?? "Your Shop"} />
@@ -744,7 +750,7 @@ export function PurchasePos({
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1">
-                        <PrintPurchaseButton purchaseId={r.id} company={company} design={invoiceDesign} />
+                        <PrintPurchaseButton purchaseId={r.id} company={company} design={invoiceDesign} docType={r.docType} />
                         {r.docType === "purchase" && r.status === "completed" && <PrintBarcodesLink purchaseId={r.id} />}
                         {r.docType === "purchase_order" && r.status === "completed" && (
                           <EmailPurchaseOrderButton purchaseId={r.id} companyName={company?.name ?? "Your Shop"} />
@@ -790,6 +796,7 @@ function PrintBarcodesLink({ purchaseId }: { purchaseId: string }) {
 type PurchaseInvoiceDetail = Awaited<ReturnType<typeof getPurchaseInvoiceData>>;
 
 const PRINT_SIZES = [
+  { value: "continuous", label: "Continuous" },
   { value: "a4", label: "A4" },
   { value: "a5", label: "A5" },
   { value: "80mm", label: "80mm" },
@@ -798,23 +805,35 @@ const PRINT_SIZES = [
 ] as const;
 type PrintSize = (typeof PRINT_SIZES)[number]["value"];
 
+/** A4-width page whose height grows to fit the document exactly — no mid-table page break, no header repeating on a spillover second page, no wasted blank space under a short one either. */
+const CONTINUOUS_WIDTH_MM = 210;
+
 /** Prints one purchase document. Mirrors `PrintSaleButton` in billing-pos.tsx. */
 function PrintPurchaseButton({
   purchaseId,
   company,
   design,
   label,
+  docType,
 }: {
   purchaseId: string;
   company: InvoiceCompany | null;
   design: InvoiceDesign;
   label?: string;
+  /** A purchase order is usually a one-off document sent to a supplier, not a fixed-size form — it opens on "Continuous" by default. */
+  docType?: string;
 }) {
   const ref = React.useRef<HTMLDivElement>(null);
   const [detail, setDetail] = React.useState<PurchaseInvoiceDetail | null>(null);
   const [loading, setLoading] = React.useState(false);
-  const [size, setSize] = React.useState<PrintSize>(design.paper as PrintSize);
-  const activeDesign = React.useMemo(() => ({ ...design, paper: size }), [design, size]);
+  const [size, setSize] = React.useState<PrintSize>(docType === "purchase_order" ? "continuous" : (design.paper as PrintSize));
+  const activeDesign = React.useMemo(
+    () =>
+      size === "continuous"
+        ? { ...design, paper: "custom" as const, customWidthMm: CONTINUOUS_WIDTH_MM, customHeightMm: null }
+        : { ...design, paper: size },
+    [design, size]
+  );
 
   async function handleClick() {
     setLoading(true);
@@ -832,12 +851,18 @@ function PrintPurchaseButton({
   React.useEffect(() => {
     if (!detail || !ref.current) return;
     const element = ref.current;
+    const customSizeMm =
+      size === "continuous"
+        ? { width: CONTINUOUS_WIDTH_MM }
+        : size === "custom"
+          ? { width: design.customWidthMm, height: design.customHeightMm ?? undefined }
+          : undefined;
     void getPrintService()
       .print({
         element,
-        format: size as PrintFormat,
+        format: (size === "continuous" ? "custom" : size) as PrintFormat,
         title: detail.purchase.docNumber,
-        customSizeMm: size === "custom" ? { width: design.customWidthMm, height: design.customHeightMm ?? undefined } : undefined,
+        customSizeMm,
       })
       .finally(() => setDetail(null));
   }, [detail, size, design.customWidthMm, design.customHeightMm]);
@@ -850,7 +875,7 @@ function PrintPurchaseButton({
           {loading ? "Loading…" : (label ?? "Print")}
         </Button>
         <Select items={PRINT_SIZES} value={size} onValueChange={(v) => v && setSize(v as PrintSize)}>
-          <SelectTrigger className="h-7 w-[62px] px-1.5 text-xs">
+          <SelectTrigger className="h-7 w-[86px] px-1.5 text-xs">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
