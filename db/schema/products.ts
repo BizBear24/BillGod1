@@ -46,6 +46,8 @@ export const products = pgTable(
     sellingPrice: numeric("selling_price", { precision: 12, scale: 2 }).notNull().default("0"),
     mrp: numeric("mrp", { precision: 12, scale: 2 }).notNull().default("0"),
     wholesalePrice: numeric("wholesale_price", { precision: 12, scale: 2 }),
+    /** A standing discount this product always gets at billing time — prefills a cart line's own Disc %, which the cashier can still override per sale. */
+    defaultDiscountPercent: numeric("default_discount_percent", { precision: 5, scale: 2 }).notNull().default("0"),
 
     openingStock: numeric("opening_stock", { precision: 14, scale: 3 }).notNull().default("0"),
     minStock: numeric("min_stock", { precision: 14, scale: 3 }).notNull().default("0"),

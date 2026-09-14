@@ -155,13 +155,21 @@ export async function saveSale(saleId: string | null, input: unknown): Promise<A
    * so the two never stack past the value of the goods. It is priced from the
    * coupon's own record here — the client only said which code was typed.
    */
+  // A manual bill-wide discount the cashier typed in — independent of the
+  // loyalty tier, and not something the cashier is expected to keep re-typing
+  // on a return, so it copies over the same way the tier discount does.
+  let billDiscountPercent = Math.max(0, Math.min(100, parsed.data.billDiscountPercent ?? 0));
+  if (docType === "sale_return" && original) {
+    billDiscountPercent = parseFloat(original.billDiscountPercent) || 0;
+  }
+
   let couponCode: string | null = null;
   let couponDiscountAmount = 0;
   if (parsed.data.couponCode) {
     if (status !== "completed" || docType !== "sale") {
       return { ok: false, error: "A coupon can only be applied to a completed sale." };
     }
-    const preTier = computeSaleTotals(parsed.data.items, { tierDiscountPercent });
+    const preTier = computeSaleTotals(parsed.data.items, { tierDiscountPercent, billDiscountPercent });
     const discountable = round2(preTier.subtotal - preTier.discountAmount);
     const evaluation = await evaluateCoupon({
       businessId,
@@ -175,7 +183,7 @@ export async function saveSale(saleId: string | null, input: unknown): Promise<A
     couponDiscountAmount = evaluation.discountAmount;
   }
 
-  const totals = computeSaleTotals(parsed.data.items, { tierDiscountPercent, couponDiscountAmount });
+  const totals = computeSaleTotals(parsed.data.items, { tierDiscountPercent, billDiscountPercent, couponDiscountAmount });
   const { subtotal, discountAmount, taxAmount, totalAmount } = totals;
   const lines = parsed.data.items.map((item, i) => ({
     productId: item.productId,
@@ -279,6 +287,7 @@ export async function saveSale(saleId: string | null, input: unknown): Promise<A
         redeemedValue: String(redeemedValue),
         loyaltyTierName: tierName,
         tierDiscountPercent: String(tierDiscountPercent),
+        billDiscountPercent: String(billDiscountPercent),
         couponCode,
         couponDiscountAmount: String(totals.couponDiscountAmount),
         notes: parsed.data.notes || null,
@@ -839,6 +848,7 @@ export async function listReturnableSales(limit = 100) {
       totalAmount: sales.totalAmount,
       customerId: sales.customerId,
       tierDiscountPercent: sales.tierDiscountPercent,
+      billDiscountPercent: sales.billDiscountPercent,
       createdAt: sales.createdAt,
     })
     .from(sales)

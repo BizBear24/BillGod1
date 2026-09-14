@@ -25,6 +25,8 @@ export type TotalsItemInput = {
 export type TotalsOptions = {
   /** Loyalty tier percentage off the whole bill. */
   tierDiscountPercent?: number;
+  /** A manual "% off everything" the cashier typed in, independent of any loyalty tier. */
+  billDiscountPercent?: number;
   /** Flat rupee value of an applied coupon, before capping. */
   couponDiscountAmount?: number;
 };
@@ -44,6 +46,8 @@ export type ComputedTotals = {
   /** Discounts entered per line, before any bill-level discount. */
   lineDiscountAmount: number;
   tierDiscountAmount: number;
+  /** What the manual "% off everything" was actually worth, after sharing the bill with the tier discount. */
+  billDiscountPercentAmount: number;
   /** What the coupon was actually worth after capping at the bill's value. */
   couponDiscountAmount: number;
   /** Line discounts + tier + coupon — what the header stores. */
@@ -81,10 +85,20 @@ export function computeSaleTotals(items: TotalsItemInput[], options: TotalsOptio
 
   const baseTotal = bases.reduce((s, b) => s + b.base, 0);
   const tierPercent = Math.max(0, Math.min(100, options.tierDiscountPercent ?? 0));
-  const tierDiscountAmount = round2((baseTotal * tierPercent) / 100);
-  // A coupon can only take off what is left after the tier, never more.
-  const couponDiscountAmount = round2(Math.max(0, Math.min(options.couponDiscountAmount ?? 0, baseTotal - tierDiscountAmount)));
-  const billDiscount = round2(tierDiscountAmount + couponDiscountAmount);
+  const manualPercent = Math.max(0, Math.min(100, options.billDiscountPercent ?? 0));
+  // The tier and the manual "% off everything" are independent settings, so
+  // together they can ask for more than the bill is worth — scaled down
+  // proportionally rather than letting one silently win over the other.
+  const rawTierAmount = round2((baseTotal * tierPercent) / 100);
+  const rawManualAmount = round2((baseTotal * manualPercent) / 100);
+  const rawPercentTotal = round2(rawTierAmount + rawManualAmount);
+  const percentDiscountAmount = Math.min(baseTotal, rawPercentTotal);
+  const percentScale = rawPercentTotal > 0 ? percentDiscountAmount / rawPercentTotal : 1;
+  const tierDiscountAmount = round2(rawTierAmount * percentScale);
+  const billDiscountPercentAmount = round2(percentDiscountAmount - tierDiscountAmount);
+  // A coupon can only take off what is left after those, never more.
+  const couponDiscountAmount = round2(Math.max(0, Math.min(options.couponDiscountAmount ?? 0, baseTotal - percentDiscountAmount)));
+  const billDiscount = round2(percentDiscountAmount + couponDiscountAmount);
 
   const shares = apportion(
     billDiscount,
@@ -115,8 +129,9 @@ export function computeSaleTotals(items: TotalsItemInput[], options: TotalsOptio
     lines,
     subtotal,
     lineDiscountAmount,
-    tierDiscountAmount: Math.min(tierDiscountAmount, appliedBillDiscount),
-    couponDiscountAmount: round2(appliedBillDiscount - Math.min(tierDiscountAmount, appliedBillDiscount)),
+    tierDiscountAmount,
+    billDiscountPercentAmount,
+    couponDiscountAmount,
     discountAmount,
     taxAmount,
     totalAmount: round2(subtotal - discountAmount + taxAmount),

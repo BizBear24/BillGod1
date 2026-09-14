@@ -34,6 +34,8 @@ type Product = {
   mrp: string;
   taxRateId: string | null;
   trackSerial: boolean;
+  /** A standing discount set on the product master — prefills this line's Disc %, still overridable per sale. */
+  defaultDiscountPercent: string;
 };
 type Customer = { id: string; name: string; phone: string | null; loyaltyPoints: string };
 type LoyaltyConfig = { enabled: boolean; pointsPerCurrency: number; currencyPerPoint: number; minPointsToRedeem: number; expiryDays: number };
@@ -47,6 +49,7 @@ type ReturnableSale = {
   totalAmount: string;
   customerId: string | null;
   tierDiscountPercent: string;
+  billDiscountPercent: string;
   createdAt: Date;
 };
 type HeldSale = { id: string; docNumber: string; docType: string; totalAmount: string; updatedAt: Date };
@@ -135,6 +138,8 @@ export function BillingPos({
   const [counterId, setCounterId] = React.useState(counters.find((c) => c.isDefault)?.id ?? counters[0]?.id ?? "none");
   const [originalSaleId, setOriginalSaleId] = React.useState("none");
   const [notes, setNotes] = React.useState("");
+  /** A manual "% off everything" the cashier can type in for this bill, on top of any loyalty tier discount. */
+  const [billDiscountPercent, setBillDiscountPercent] = React.useState(0);
   const [redeemPoints, setRedeemPoints] = React.useState(0);
   const [coupon, setCoupon] = React.useState<{ code: string; discountAmount: number; description: string } | null>(null);
   const [couponDraft, setCouponDraft] = React.useState("");
@@ -249,6 +254,11 @@ export function BillingPos({
       : docType === "sale_return" && linkedOriginal
         ? parseFloat(linkedOriginal.tierDiscountPercent) || 0
         : 0;
+  // A return copies the manual discount off the bill it reverses too, the
+  // same way it copies the tier rate — the cashier can't re-type one for a
+  // bill that's already been charged.
+  const effectiveBillDiscountPercent =
+    docType === "sale_return" && linkedOriginal ? parseFloat(linkedOriginal.billDiscountPercent) || 0 : billDiscountPercent;
 
   const filtered = React.useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -270,7 +280,7 @@ export function BillingPos({
           name: p.name,
           quantity: 1,
           unitPrice: parseFloat(p.sellingPrice) || 0,
-          discountPercent: 0,
+          discountPercent: parseFloat(p.defaultDiscountPercent) || 0,
           taxRatePercent: p.taxRateId ? taxRateById[p.taxRateId] ?? 0 : 0,
           serials: [],
         },
@@ -299,8 +309,8 @@ export function BillingPos({
 
   // Exactly the arithmetic the server will redo when the bill is saved.
   const computed = React.useMemo(
-    () => computeSaleTotals(cart, { tierDiscountPercent, couponDiscountAmount: coupon?.discountAmount ?? 0 }),
-    [cart, tierDiscountPercent, coupon]
+    () => computeSaleTotals(cart, { tierDiscountPercent, billDiscountPercent: effectiveBillDiscountPercent, couponDiscountAmount: coupon?.discountAmount ?? 0 }),
+    [cart, tierDiscountPercent, effectiveBillDiscountPercent, coupon]
   );
 
   const totals = React.useMemo(() => {
@@ -330,6 +340,7 @@ export function BillingPos({
     setWarehouseId(warehouses[0]?.id ?? "");
     setOriginalSaleId("none");
     setNotes("");
+    setBillDiscountPercent(0);
     setRedeemPoints(0);
     setCoupon(null);
     setCouponDraft("");
@@ -347,8 +358,8 @@ export function BillingPos({
     const code = couponDraft.trim();
     if (!code) return;
     setCheckingCoupon(true);
-    // Coupons come off what is left after line discounts and the loyalty tier.
-    const beforeCoupon = computeSaleTotals(cart, { tierDiscountPercent });
+    // Coupons come off what is left after line discounts, the loyalty tier and the manual bill discount.
+    const beforeCoupon = computeSaleTotals(cart, { tierDiscountPercent, billDiscountPercent: effectiveBillDiscountPercent });
     const result = await checkCoupon({
       code,
       discountableAmount: round2(beforeCoupon.subtotal - beforeCoupon.discountAmount),
@@ -389,6 +400,7 @@ export function BillingPos({
       customerId,
       salespersonId,
       notes,
+      billDiscountPercent,
       couponCode: isDraft ? undefined : coupon?.code,
       redeemPoints: isDraft ? 0 : redeemPoints,
       items: cart.map((l) => ({
@@ -434,6 +446,7 @@ export function BillingPos({
     setCounterId(data.sale.counterId ?? "none");
     setOriginalSaleId(data.sale.originalSaleId ?? "none");
     setNotes(data.sale.notes ?? "");
+    setBillDiscountPercent(parseFloat(data.sale.billDiscountPercent) || 0);
     setCart(
       validItems.map((i) => ({
         productId: i.productId,
@@ -768,6 +781,23 @@ export function BillingPos({
 
             <Card>
               <CardContent className="space-y-1 py-4 text-sm">
+                <div className="flex items-center justify-between gap-2 pb-1">
+                  <label htmlFor="bill-discount-percent" className="text-muted-foreground">
+                    Discount on all items (%)
+                  </label>
+                  <Input
+                    id="bill-discount-percent"
+                    type="number"
+                    min={0}
+                    max={100}
+                    step="any"
+                    disabled={docType === "sale_return"}
+                    value={docType === "sale_return" ? effectiveBillDiscountPercent : billDiscountPercent || ""}
+                    onChange={(e) => setBillDiscountPercent(Math.max(0, Math.min(100, parseFloat(e.target.value) || 0)))}
+                    placeholder="0"
+                    className="h-7 w-20 text-right"
+                  />
+                </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Subtotal</span>
                   <span>{money(totals.subtotal)}</span>
@@ -783,8 +813,14 @@ export function BillingPos({
                 </div>
                 {totals.lineDiscountAmount > 0 && (
                   <div className="flex justify-between text-xs text-muted-foreground">
-                    <span className="pl-3">incl. line discounts</span>
+                    <span className="pl-3">incl. line discounts (specific items)</span>
                     <span>-{money(totals.lineDiscountAmount)}</span>
+                  </div>
+                )}
+                {totals.billDiscountPercentAmount > 0 && (
+                  <div className="flex justify-between text-xs text-muted-foreground">
+                    <span className="pl-3">incl. bill discount ({effectiveBillDiscountPercent}% on all items)</span>
+                    <span>-{money(totals.billDiscountPercentAmount)}</span>
                   </div>
                 )}
                 {totals.couponDiscountAmount > 0 && coupon && (

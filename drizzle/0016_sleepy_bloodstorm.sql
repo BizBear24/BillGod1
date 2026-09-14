@@ -1,0 +1,2 @@
+ALTER TABLE "products" ADD COLUMN "default_discount_percent" numeric(5, 2) DEFAULT '0' NOT NULL;--> statement-breakpoint
+ALTER TABLE "sales" ADD COLUMN "bill_discount_percent" numeric(5, 2) DEFAULT '0' NOT NULL;

@@ -64,6 +64,8 @@ export const sales = pgTable(
     tierDiscountPercent: numeric("tier_discount_percent", { precision: 5, scale: 2 }).notNull().default("0"),
     couponCode: text("coupon_code"),
     couponDiscountAmount: numeric("coupon_discount_amount", { precision: 14, scale: 2 }).notNull().default("0"),
+    /** A manual "% off the whole bill" the cashier typed in, on top of (not instead of) any loyalty tier discount. */
+    billDiscountPercent: numeric("bill_discount_percent", { precision: 5, scale: 2 }).notNull().default("0"),
 
     notes: text("notes"),
     createdByUserId: text("created_by_user_id").notNull().references(() => users.id),

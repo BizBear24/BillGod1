@@ -90,6 +90,7 @@ function toDbValues(businessId: string, data: ReturnType<typeof productSchema.pa
     sellingPrice: data.sellingPrice !== undefined ? String(data.sellingPrice) : undefined,
     mrp: data.mrp !== undefined ? String(data.mrp) : undefined,
     wholesalePrice: data.wholesalePrice !== undefined ? String(data.wholesalePrice) : undefined,
+    defaultDiscountPercent: data.defaultDiscountPercent !== undefined ? String(data.defaultDiscountPercent) : undefined,
     openingStock: data.openingStock !== undefined ? String(data.openingStock) : undefined,
     minStock: data.minStock !== undefined ? String(data.minStock) : undefined,
     reorderLevel: data.reorderLevel !== undefined ? String(data.reorderLevel) : undefined,

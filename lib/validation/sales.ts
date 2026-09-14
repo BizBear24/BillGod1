@@ -70,6 +70,8 @@ export const createSaleSchema = z.object({
     .transform((v) => (v ? v.toUpperCase() : undefined)),
   /** Loyalty points the customer is spending on this bill. */
   redeemPoints: z.coerce.number().int().min(0).optional(),
+  /** A manual "% off everything" the cashier typed in, on top of any loyalty tier discount. */
+  billDiscountPercent: z.coerce.number().min(0).max(100).optional(),
   items: z.array(saleItemSchema).min(1, "Add at least one item"),
   payments: z.array(salePaymentSchema).optional(),
 });

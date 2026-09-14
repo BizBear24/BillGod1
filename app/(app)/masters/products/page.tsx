@@ -44,6 +44,7 @@ export default async function ProductsPage() {
     { name: "sellingPrice", label: "Selling Price", type: "text", placeholder: "0.00" },
     { name: "mrp", label: "MRP", type: "text", placeholder: "0.00" },
     { name: "wholesalePrice", label: "Wholesale Price", type: "text", placeholder: "0.00" },
+    { name: "defaultDiscountPercent", label: "Default Discount %", type: "text", placeholder: "0" },
     { name: "openingStock", label: "Opening Stock", type: "text", placeholder: "0" },
     { name: "minStock", label: "Min Stock", type: "text", placeholder: "0" },
     { name: "reorderLevel", label: "Reorder Level", type: "text", placeholder: "0" },
@@ -76,6 +77,7 @@ export default async function ProductsPage() {
           { key: "categoryId", label: "Category", format: "lookup", lookup: categoryLookup },
           { key: "sellingPrice", label: "Selling Price", format: "currency" },
           { key: "mrp", label: "MRP", format: "currency" },
+          { key: "defaultDiscountPercent", label: "Default Disc %" },
         ]}
         fields={fields}
         defaultValues={{
@@ -96,6 +98,7 @@ export default async function ProductsPage() {
           sellingPrice: "0",
           mrp: "0",
           wholesalePrice: "",
+          defaultDiscountPercent: "0",
           openingStock: "0",
           minStock: "0",
           reorderLevel: "0",

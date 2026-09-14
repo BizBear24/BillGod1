@@ -21,6 +21,8 @@ export const productSchema = z.object({
   sellingPrice: optionalNumber(z.coerce.number().min(0)),
   mrp: optionalNumber(z.coerce.number().min(0)),
   wholesalePrice: optionalNumber(z.coerce.number().min(0)),
+  /** A standing discount this product always gets at billing time (spec: "discount on items in general"). */
+  defaultDiscountPercent: optionalNumber(z.coerce.number().min(0).max(100)),
 
   openingStock: optionalNumber(z.coerce.number()),
   minStock: optionalNumber(z.coerce.number()),
