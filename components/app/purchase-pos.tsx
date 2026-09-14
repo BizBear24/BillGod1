@@ -4,8 +4,8 @@ import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Search, Trash2, Plus, Minus, ShoppingBag, PauseCircle, X, Receipt, Ban, Printer, Tag } from "lucide-react";
-import { savePurchase, discardHeldPurchase, getPurchaseWithItems, cancelPurchase, getPurchaseInvoiceData } from "@/app/actions/purchases";
+import { Search, Trash2, Plus, Minus, ShoppingBag, PauseCircle, X, Receipt, Ban, Printer, Tag, Mail } from "lucide-react";
+import { savePurchase, discardHeldPurchase, getPurchaseWithItems, cancelPurchase, getPurchaseInvoiceData, emailPurchaseOrderToSupplier } from "@/app/actions/purchases";
 import { PURCHASE_DOC_TYPES, PURCHASE_DOC_TYPE_LABELS, PURCHASE_PAYMENT_METHODS, PURCHASE_PAYMENT_METHOD_LABELS } from "@/lib/validation/purchases";
 import { PurchaseDocument } from "@/components/app/purchase-document";
 import type { InvoiceCompany } from "@/components/app/invoice-document";
@@ -19,6 +19,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CancelDocDialog } from "@/components/app/cancel-doc-dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useActiveWarehouse } from "@/lib/active-branch";
 import { ProductPhotoIcon } from "@/components/app/product-photo-icon";
 
@@ -365,6 +366,9 @@ export function PurchasePos({
             <div className="flex items-center gap-2">
               <PrintPurchaseButton purchaseId={justCompleted.id} company={company} design={invoiceDesign} label={`Print ${justCompleted.docNumber}`} />
               {justCompleted.docType === "purchase" && <PrintBarcodesLink purchaseId={justCompleted.id} />}
+              {justCompleted.docType === "purchase_order" && (
+                <EmailPurchaseOrderButton purchaseId={justCompleted.id} companyName={company?.name ?? "Your Shop"} />
+              )}
               <Button variant="ghost" size="icon" aria-label="Dismiss" onClick={() => setJustCompleted(null)}>
                 <X className="h-3.5 w-3.5" />
               </Button>
@@ -742,6 +746,9 @@ export function PurchasePos({
                       <div className="flex justify-end gap-1">
                         <PrintPurchaseButton purchaseId={r.id} company={company} design={invoiceDesign} />
                         {r.docType === "purchase" && r.status === "completed" && <PrintBarcodesLink purchaseId={r.id} />}
+                        {r.docType === "purchase_order" && r.status === "completed" && (
+                          <EmailPurchaseOrderButton purchaseId={r.id} companyName={company?.name ?? "Your Shop"} />
+                        )}
                         {r.status === "completed" && (
                           <Button variant="ghost" size="sm" onClick={() => setCancelTarget(r)}>
                             <Ban className="h-3.5 w-3.5 text-destructive" />
@@ -860,6 +867,121 @@ function PrintPurchaseButton({
           </div>
         </div>
       )}
+    </>
+  );
+}
+
+/** Plain-text summary of a purchase order's lines — the default body an email to the supplier opens with. */
+function purchaseOrderEmailBody(detail: PurchaseInvoiceDetail, companyName: string): string {
+  if (!detail) return "";
+  const { purchase, lines } = detail;
+  const rows = lines
+    .map((l) => `- ${l.name} (${l.itemCode}) x ${num(l.quantity)} @ ₹${num(l.unitCost).toFixed(2)} = ₹${num(l.lineTotal).toFixed(2)}`)
+    .join("\n");
+  return [
+    `Dear ${purchase.supplierName},`,
+    "",
+    `Please find our purchase order ${purchase.docNumber} below.`,
+    "",
+    rows,
+    "",
+    `Total: ₹${num(purchase.totalAmount).toFixed(2)}`,
+    "",
+    "Kindly confirm and let us know the expected delivery date.",
+    "",
+    "Regards,",
+    companyName,
+  ].join("\n");
+}
+
+const num = (value: string | number) => (typeof value === "number" ? value : parseFloat(value) || 0);
+
+/** Emails a purchase order to the supplier — opens with a ready-to-send summary, editable before it goes out. */
+function EmailPurchaseOrderButton({ purchaseId, companyName }: { purchaseId: string; companyName: string }) {
+  const [open, setOpen] = React.useState(false);
+  const [loading, setLoading] = React.useState(false);
+  const [sending, setSending] = React.useState(false);
+  const [to, setTo] = React.useState("");
+  const [subject, setSubject] = React.useState("");
+  const [body, setBody] = React.useState("");
+
+  async function handleOpen() {
+    setLoading(true);
+    try {
+      const data = await getPurchaseInvoiceData(purchaseId);
+      if (!data) {
+        toast.error("Could not load that document.");
+        return;
+      }
+      setTo(data.purchase.supplierEmail ?? "");
+      setSubject(`Purchase Order ${data.purchase.docNumber} from ${companyName}`);
+      setBody(purchaseOrderEmailBody(data, companyName));
+      setOpen(true);
+    } catch {
+      toast.error("Could not load that document.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleSend() {
+    setSending(true);
+    try {
+      const result = await emailPurchaseOrderToSupplier(purchaseId, { to, subject, body });
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success(`Sent to ${to}`);
+      setOpen(false);
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <>
+      <Button variant="ghost" size="sm" disabled={loading} onClick={() => void handleOpen()}>
+        <Mail className="h-3.5 w-3.5" />
+        {loading ? "Loading…" : "Email Supplier"}
+      </Button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Email purchase order to supplier</DialogTitle>
+            <DialogDescription>Review and edit before sending — nothing goes out until you click Send.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">To</label>
+              <Input type="email" value={to} onChange={(e) => setTo(e.target.value)} placeholder="supplier@example.com" />
+              {!to && <p className="text-xs text-destructive">This supplier has no email on file — add one under Suppliers, or type one here.</p>}
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">Subject</label>
+              <Input value={subject} onChange={(e) => setSubject(e.target.value)} />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">Message</label>
+              <textarea
+                value={body}
+                onChange={(e) => setBody(e.target.value)}
+                rows={12}
+                className="w-full rounded-lg border border-input bg-transparent p-3 font-mono text-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setOpen(false)} disabled={sending}>
+              Cancel
+            </Button>
+            <Button disabled={sending || !to.trim()} onClick={() => void handleSend()}>
+              <Mail className="h-3.5 w-3.5" />
+              {sending ? "Sending…" : "Send"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

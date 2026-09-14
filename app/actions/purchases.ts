@@ -1,8 +1,9 @@
 "use server";
 
 import { eq, and, desc, inArray, sql } from "drizzle-orm";
+import { z } from "zod";
 import { getDb } from "@/db/client";
-import { purchases, purchaseItems, purchasePayments, products, suppliers, taxRates, stockMovements, hsnCodes, businesses } from "@/db/schema";
+import { purchases, purchaseItems, purchasePayments, products, suppliers, taxRates, stockMovements, hsnCodes, businesses, messageLog } from "@/db/schema";
 import { requireSessionUser, getActiveMembership } from "@/lib/auth/session";
 import { can, PERMISSIONS } from "@/lib/auth/permissions";
 import { logAudit } from "@/lib/audit";
@@ -10,6 +11,7 @@ import { listWarehousesForBusiness } from "./org";
 import { postPurchaseJournal, reverseJournalFor } from "@/lib/accounting/posting";
 import { parseSerials, recordSerialMovements, reverseSerialMovements } from "@/lib/inventory/serials";
 import { createPurchaseSchema, type CreatePurchaseInput } from "@/lib/validation/purchases";
+import { getEmailService } from "@/lib/email";
 import type { ActionResult } from "./auth";
 
 const DOC_PREFIX: Record<CreatePurchaseInput["docType"], string> = {
@@ -559,6 +561,7 @@ export async function getPurchaseInvoiceData(purchaseId: string) {
       supplierName: suppliers.name,
       supplierPhone: suppliers.phone,
       supplierGstin: suppliers.gstin,
+      supplierEmail: suppliers.email,
     })
     .from(purchases)
     .innerJoin(suppliers, eq(purchases.supplierId, suppliers.id))
@@ -586,4 +589,60 @@ export async function getPurchaseInvoiceData(purchaseId: string) {
     .orderBy(purchaseItems.sortOrder);
 
   return { purchase: row, lines: itemRows };
+}
+
+const emailPurchaseOrderSchema = z.object({
+  to: z.string().trim().email("Enter a valid email address."),
+  subject: z.string().trim().min(1, "Enter a subject."),
+  body: z.string().trim().min(1, "Enter a message."),
+});
+
+/**
+ * Emails a purchase order to a supplier — the same plain-text summary a
+ * shop would otherwise type into a chat or email by hand. Goes through
+ * whichever email provider is configured (see lib/email), so it lands in
+ * the dev outbox locally and a real inbox in production, and is logged to
+ * messageLog either way so a failed send is visible, not silently lost.
+ */
+export async function emailPurchaseOrderToSupplier(purchaseId: string, input: unknown): Promise<ActionResult> {
+  const sessionUser = await requireSessionUser();
+  const membership = await getActiveMembership(sessionUser);
+  if (!membership || !can(membership.role, PERMISSIONS.COMMUNICATIONS_SEND)) {
+    return { ok: false, error: "You don't have permission to send messages." };
+  }
+
+  const parsed = emailPurchaseOrderSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
+
+  const db = await getDb();
+  const [row] = await db
+    .select({ id: purchases.id, docNumber: purchases.docNumber })
+    .from(purchases)
+    .where(and(eq(purchases.id, purchaseId), eq(purchases.businessId, membership.businessId)))
+    .limit(1);
+  if (!row) return { ok: false, error: "That purchase order could not be found." };
+
+  let status: "sent" | "failed" = "sent";
+  let error: string | null = null;
+  try {
+    await getEmailService().send({ to: parsed.data.to, subject: parsed.data.subject, body: parsed.data.body });
+  } catch (err) {
+    status = "failed";
+    error = err instanceof Error ? err.message : "Send failed";
+  }
+
+  await db.insert(messageLog).values({
+    businessId: membership.businessId,
+    channel: "email",
+    eventKey: "purchase_order",
+    recipient: parsed.data.to,
+    subject: parsed.data.subject,
+    body: parsed.data.body,
+    status,
+    error,
+    sentByUserId: sessionUser.userId,
+  });
+
+  if (status === "failed") return { ok: false, error: error ?? "Could not send that email." };
+  return { ok: true };
 }

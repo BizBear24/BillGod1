@@ -221,7 +221,7 @@ export function EntityCrudManager<T extends Record<string, unknown> & { id: stri
       </CardContent>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-2xl">
           {/* `key` forces a remount so react-hook-form re-reads defaultValues
               per item — it otherwise only applies them once, at first mount. */}
           <EntityForm
@@ -331,13 +331,18 @@ function EntityForm({
       </DialogHeader>
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+          {/* Two columns so a form with many fields (Products has 22) reads as a
+              short, wide grid instead of one long single-column scroll — a toggle
+              still spans the full width since a checkbox+label pair looks stranded
+              squeezed into a half-width cell. */}
+          <div className="grid gap-x-4 gap-y-4 sm:grid-cols-2">
           {fields.map((f) => (
             <FormField
               key={f.name}
               control={form.control}
               name={f.name}
               render={({ field }) => (
-                <FormItem className={f.type === "toggle" ? "flex flex-row-reverse items-center justify-end gap-2 space-y-0" : undefined}>
+                <FormItem className={f.type === "toggle" ? "flex flex-row-reverse items-center justify-end gap-2 space-y-0 sm:col-span-2" : undefined}>
                   <FormLabel className={f.type === "toggle" ? "font-normal" : undefined}>{f.label}</FormLabel>
                   <FormControl>
                     {f.type === "select" && f.createKind ? (
@@ -380,6 +385,7 @@ function EntityForm({
               )}
             />
           ))}
+          </div>
           {form.formState.errors.root && <p className="text-sm text-destructive">{form.formState.errors.root.message}</p>}
           <DialogFooter>
             <Button type="submit" disabled={form.formState.isSubmitting}>
