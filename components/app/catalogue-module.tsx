@@ -155,6 +155,9 @@ export function CatalogueModule({
         setSheetImages((prev) => ({ ...prev, ...fetched }));
       }
       setBuilt(true);
+      // The sheet renders below the fold on most screens, so a click that
+      // only updates state down there can look like nothing happened.
+      sheetRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     } catch {
       toast.error("Could not load photos for this catalogue.");
     } finally {

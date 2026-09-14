@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Search, Trash2, Plus, Minus, ShoppingCart, PauseCircle, X, Receipt, Ban, Award, Ticket, Printer } from "lucide-react";
 import { saveSale, discardHeldSale, getSaleWithItems, cancelSale, getInvoiceData } from "@/app/actions/sales";
 import { checkCoupon } from "@/app/actions/engagement";
+import { quickCreateCustomer } from "@/app/actions/parties";
 import { SALE_DOC_TYPES, SALE_DOC_TYPE_LABELS, SALE_PAYMENT_METHODS, SALE_PAYMENT_METHOD_LABELS } from "@/lib/validation/sales";
 import { computeSaleTotals, round2 } from "@/lib/sales/totals";
 import { resolveTier, type TierRow } from "@/lib/loyalty/tiers";
@@ -20,6 +21,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Autocomplete, AutocompleteInputGroup, AutocompleteInput, AutocompletePopup, AutocompleteItem } from "@/components/ui/autocomplete";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CancelDocDialog } from "@/components/app/cancel-doc-dialog";
 
@@ -124,6 +126,9 @@ export function BillingPos({
   const [cart, setCart] = React.useState<CartLine[]>([]);
   const [docType, setDocType] = React.useState<(typeof SALE_DOC_TYPES)[number]>("sale");
   const [customerId, setCustomerId] = React.useState("walkin");
+  const [customerList, setCustomerList] = React.useState<Customer[]>(customers);
+  const [customerQuery, setCustomerQuery] = React.useState("Walk-in Customer");
+  const [creatingCustomer, setCreatingCustomer] = React.useState(false);
   const [salespersonId, setSalespersonId] = React.useState("none");
   const [warehouseId, setWarehouseId] = useActiveWarehouse(businessId, warehouses);
   const hasImage = React.useMemo(() => new Set(imageProductIds), [imageProductIds]);
@@ -140,6 +145,10 @@ export function BillingPos({
   const [tab, setTab] = React.useState<"sell" | "held" | "recent">("sell");
   const [cancelTarget, setCancelTarget] = React.useState<RecentSale | null>(null);
   const [justCompleted, setJustCompleted] = React.useState<{ id: string; docNumber: string } | null>(null);
+
+  // Keeps freshly-created customers visible after this reloads with the
+  // server's customer list post-save, without losing one created moments ago.
+  React.useEffect(() => setCustomerList(customers), [customers]);
 
   const taxRateById = React.useMemo(() => Object.fromEntries(taxRates.map((t) => [t.id, parseFloat(t.ratePercent)])), [taxRates]);
   const productById = React.useMemo(() => Object.fromEntries(products.map((p) => [p.id, p])), [products]);
@@ -170,10 +179,44 @@ export function BillingPos({
     () => [{ value: "none", label: "No salesperson" }, ...salespersons.map((s) => ({ value: s.id, label: s.name }))],
     [salespersons]
   );
-  const customerItems = React.useMemo(
-    () => [{ value: "walkin", label: "Walk-in Customer" }, ...customers.map((c) => ({ value: c.id, label: c.phone ? `${c.name} (${c.phone})` : c.name }))],
-    [customers]
-  );
+  const customerLabel = React.useCallback((c: Customer) => (c.phone ? `${c.name} (${c.phone})` : c.name), []);
+  function customerQueryFor(id: string) {
+    if (id === "walkin") return "Walk-in Customer";
+    const c = customerList.find((x) => x.id === id);
+    return c ? customerLabel(c) : "";
+  }
+  function selectCustomer(id: string, label: string) {
+    setCustomerId(id);
+    setCustomerQuery(label);
+    setRedeemPoints(0);
+  }
+  async function handleCreateCustomer(name: string) {
+    setCreatingCustomer(true);
+    const result = await quickCreateCustomer(name);
+    setCreatingCustomer(false);
+    if (!result.ok || !result.customer) {
+      toast.error(result.ok ? "Couldn't create customer" : result.error);
+      return;
+    }
+    setCustomerList((prev) => [...prev, result.customer!]);
+    selectCustomer(result.customer.id, result.customer.name);
+    toast.success(`Created new customer "${result.customer.name}"`);
+  }
+  // The typed text against the existing customer list, plus a "create new"
+  // affordance when nobody matches — the field always resolves to either an
+  // existing customer or a brand-new one, never a dangling bit of text.
+  const normalizedCustomerQuery = customerQuery.trim().toLowerCase();
+  const matchingCustomers = React.useMemo(() => {
+    if (!normalizedCustomerQuery) return customerList;
+    return customerList.filter(
+      (c) => c.name.toLowerCase().includes(normalizedCustomerQuery) || c.phone?.toLowerCase().includes(normalizedCustomerQuery)
+    );
+  }, [customerList, normalizedCustomerQuery]);
+  const showWalkinOption = !normalizedCustomerQuery || "walk-in customer".includes(normalizedCustomerQuery);
+  const showCreateCustomer =
+    normalizedCustomerQuery.length > 0 &&
+    normalizedCustomerQuery !== "walk-in customer" &&
+    !customerList.some((c) => c.name.trim().toLowerCase() === normalizedCustomerQuery);
   const warehouseItems = React.useMemo(() => warehouses.map((w) => ({ value: w.id, label: w.label })), [warehouses]);
   const counterItems = React.useMemo(
     () => [{ value: "none", label: "No counter" }, ...counters.map((c) => ({ value: c.id, label: c.label }))],
@@ -187,7 +230,7 @@ export function BillingPos({
     [returnableSales]
   );
 
-  const selectedCustomer = customerId === "walkin" ? null : customers.find((c) => c.id === customerId) ?? null;
+  const selectedCustomer = customerId === "walkin" ? null : customerList.find((c) => c.id === customerId) ?? null;
   const availablePoints = selectedCustomer ? Math.floor(parseFloat(selectedCustomer.loyaltyPoints)) : 0;
 
   // Previews the tier the server will apply. The server resolves it again from
@@ -282,6 +325,7 @@ export function BillingPos({
     setCart([]);
     setDocType("sale");
     setCustomerId("walkin");
+    setCustomerQuery("Walk-in Customer");
     setSalespersonId("none");
     setWarehouseId(warehouses[0]?.id ?? "");
     setOriginalSaleId("none");
@@ -382,7 +426,9 @@ export function BillingPos({
       toast.error("Some items on this bill no longer exist and were dropped.");
     }
     setDocType(data.sale.docType);
-    setCustomerId(data.sale.customerId ?? "walkin");
+    const resumedCustomerId = data.sale.customerId ?? "walkin";
+    setCustomerId(resumedCustomerId);
+    setCustomerQuery(customerQueryFor(resumedCustomerId));
     setSalespersonId(data.sale.salespersonId ?? "none");
     setWarehouseId(data.sale.warehouseId ?? warehouses[0]?.id ?? "");
     setCounterId(data.sale.counterId ?? "none");
@@ -685,23 +731,38 @@ export function BillingPos({
                     </SelectContent>
                   </Select>
                 )}
-                <Select items={customerItems} value={customerId} onValueChange={(v) => {
-                      setCustomerId(v ?? "walkin");
-                      setRedeemPoints(0);
-                    }}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Customer" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="walkin">Walk-in Customer</SelectItem>
-                    {customers.map((c) => (
-                      <SelectItem key={c.id} value={c.id}>
-                        {c.name}
-                        {c.phone ? ` (${c.phone})` : ""}
-                      </SelectItem>
+                <Autocomplete
+                  items={matchingCustomers}
+                  value={customerQuery}
+                  onValueChange={(v) => setCustomerQuery(v)}
+                  itemToStringValue={(c) => customerLabel(c)}
+                  openOnInputClick
+                >
+                  <AutocompleteInputGroup>
+                    <AutocompleteInput placeholder="Type to search or add a customer" />
+                  </AutocompleteInputGroup>
+                  <AutocompletePopup>
+                    {showWalkinOption && (
+                      <AutocompleteItem value="walkin" onClick={() => selectCustomer("walkin", "Walk-in Customer")}>
+                        Walk-in Customer
+                      </AutocompleteItem>
+                    )}
+                    {matchingCustomers.map((c) => (
+                      <AutocompleteItem key={c.id} value={c} onClick={() => selectCustomer(c.id, customerLabel(c))}>
+                        {customerLabel(c)}
+                      </AutocompleteItem>
                     ))}
-                  </SelectContent>
-                </Select>
+                    {showCreateCustomer && (
+                      <AutocompleteItem
+                        value="create"
+                        disabled={creatingCustomer}
+                        onClick={() => handleCreateCustomer(customerQuery.trim())}
+                      >
+                        + Create new customer &quot;{customerQuery.trim()}&quot;
+                      </AutocompleteItem>
+                    )}
+                  </AutocompletePopup>
+                </Autocomplete>
               </CardContent>
             </Card>
 
@@ -845,13 +906,13 @@ export function BillingPos({
                   <>
                 <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Payment</p>
                 {payments.map((p, i) => (
-                  <div key={i} className="flex items-center gap-2">
+                  <div key={i} className="flex flex-wrap items-center gap-2">
                     <Select
                       items={paymentMethodItems}
                       value={p.method}
                       onValueChange={(v) => setPayments((prev) => prev.map((row, idx) => (idx === i ? { ...row, method: v as PaymentRow["method"] } : row)))}
                     >
-                      <SelectTrigger className="w-full">
+                      <SelectTrigger className="w-full min-w-[120px] flex-1">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -869,10 +930,16 @@ export function BillingPos({
                         setPayments((prev) => prev.map((row, idx) => (idx === i ? { ...row, amount: parseFloat(e.target.value) || 0 } : row)))
                       }
                       placeholder="0.00"
-                      className="w-28"
+                      className="w-28 shrink-0"
                     />
                     {payments.length > 1 && (
-                      <Button variant="ghost" size="icon" aria-label="Remove payment row" onClick={() => setPayments((prev) => prev.filter((_, idx) => idx !== i))}>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="shrink-0"
+                        aria-label="Remove payment row"
+                        onClick={() => setPayments((prev) => prev.filter((_, idx) => idx !== i))}
+                      >
                         <Minus className="h-3.5 w-3.5" />
                       </Button>
                     )}

@@ -72,6 +72,26 @@ export async function createCustomer(input: unknown): Promise<ActionResult> {
   return { ok: true };
 }
 
+// Used by the billing screen's customer field: typing a name that doesn't
+// match anyone existing creates a bare-minimum customer on the spot, rather
+// than forcing the cashier out to the customers page mid-sale.
+export async function quickCreateCustomer(name: string): Promise<ActionResult & { customer?: { id: string; name: string; phone: string | null; loyaltyPoints: string } }> {
+  const gate = await requireGate(PERMISSIONS.CUSTOMERS_MANAGE);
+  if (!gate.ok) return gate;
+  const parsed = customerSchema.safeParse({ name });
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
+  const db = await getDb();
+  const businessId = gate.membership.businessId;
+
+  const [row] = await db
+    .insert(customers)
+    .values({ businessId, name: parsed.data.name })
+    .returning();
+
+  await logAudit({ businessId, userId: gate.sessionUser.userId, action: "customer.created", entityType: "customer", entityId: row.id, after: { name: parsed.data.name } });
+  return { ok: true, customer: { id: row.id, name: row.name, phone: row.phone, loyaltyPoints: row.loyaltyPoints } };
+}
+
 export async function updateCustomer(id: string, input: unknown): Promise<ActionResult> {
   const gate = await requireGate(PERMISSIONS.CUSTOMERS_MANAGE);
   if (!gate.ok) return gate;
