@@ -24,6 +24,7 @@ import { PAGE_SIZES, type PrintFormat, type PrintJob, type PrintService } from "
  */
 const MARKER = "data-billgod-printing";
 const STYLE_ID = "billgod-print-style";
+const COPY_CLASS = "billgod-print-copy";
 
 type Restore = () => void;
 
@@ -93,6 +94,24 @@ export class BrowserPrintService implements PrintService {
         ? { css: `${job.customSizeMm.width}mm ${job.customSizeMm.height ? `${job.customSizeMm.height}mm` : "auto"}`, marginCss: "4mm" }
         : PAGE_SIZES[job.format as Exclude<PrintFormat, "custom">];
     const previousTitle = document.title;
+    const copies = Math.max(1, Math.floor(job.copies ?? 1));
+
+    // Printing N copies is done by repeating the already-rendered element N
+    // times on the page ourselves — not by trusting the OS/browser dialog's
+    // own "copies" field, which some drivers remember from the last job and
+    // apply silently to the next one regardless of what was asked for here.
+    let wrapper: HTMLElement | null = null;
+    if (copies > 1) {
+      wrapper = document.createElement("div");
+      for (let i = 0; i < copies; i++) {
+        const copy = document.createElement("div");
+        copy.className = COPY_CLASS;
+        copy.appendChild(job.element.cloneNode(true));
+        wrapper.appendChild(copy);
+      }
+      job.element.parentElement?.insertBefore(wrapper, job.element.nextSibling);
+    }
+    const target = wrapper ?? job.element;
 
     const style = document.createElement("style");
     style.id = STYLE_ID;
@@ -107,12 +126,16 @@ export class BrowserPrintService implements PrintService {
           color: #000 !important;
           box-shadow: none !important;
         }
+        [${MARKER}] .${COPY_CLASS} + .${COPY_CLASS} {
+          break-before: page;
+          page-break-before: always;
+        }
       }
     `;
 
-    job.element.setAttribute(MARKER, "");
+    target.setAttribute(MARKER, "");
     document.head.appendChild(style);
-    const restore = isolateForPrint(job.element);
+    const restore = isolateForPrint(target);
     if (job.title) document.title = job.title;
 
     try {
@@ -122,7 +145,8 @@ export class BrowserPrintService implements PrintService {
       window.print();
     } finally {
       restore();
-      job.element.removeAttribute(MARKER);
+      target.removeAttribute(MARKER);
+      wrapper?.remove();
       style.remove();
       document.title = previousTitle;
     }

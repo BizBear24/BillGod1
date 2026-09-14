@@ -1206,6 +1206,7 @@ function PrintSaleButton({
   const [detail, setDetail] = React.useState<InvoiceDetail | null>(null);
   const [loading, setLoading] = React.useState(false);
   const [size, setSize] = React.useState<PrintSize>(design.paper as PrintSize);
+  const [copies, setCopies] = React.useState(1);
   const activeDesign = React.useMemo(() => ({ ...design, paper: size }), [design, size]);
 
   async function handleClick() {
@@ -1230,9 +1231,10 @@ function PrintSaleButton({
         format: size as PrintFormat,
         title: detail.sale.docNumber,
         customSizeMm: size === "custom" ? { width: design.customWidthMm, height: design.customHeightMm ?? undefined } : undefined,
+        copies,
       })
       .finally(() => setDetail(null));
-  }, [detail, size, design.customWidthMm, design.customHeightMm]);
+  }, [detail, size, copies, design.customWidthMm, design.customHeightMm]);
 
   return (
     <>
@@ -1251,6 +1253,16 @@ function PrintSaleButton({
             ))}
           </SelectContent>
         </Select>
+        <Input
+          type="number"
+          min={1}
+          max={20}
+          value={copies}
+          onChange={(e) => setCopies(Math.max(1, Math.min(20, parseInt(e.target.value, 10) || 1)))}
+          aria-label="Number of copies"
+          title="Copies"
+          className="h-7 w-12 px-1.5 text-center text-xs"
+        />
       </div>
       {detail && (
         <div className="fixed left-[-9999px] top-0" aria-hidden>

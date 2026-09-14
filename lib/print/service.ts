@@ -19,6 +19,8 @@ export type PrintJob = {
   title?: string;
   /** Required when `format` is "custom" — a shop's own cut paper size, in millimetres. Omit height for a continuous roll. */
   customSizeMm?: { width: number; height?: number };
+  /** How many physical copies to print. Repeats the element on the page rather than relying on the OS print dialog's own (often sticky) copies count. @default 1 */
+  copies?: number;
 };
 
 export interface PrintService {

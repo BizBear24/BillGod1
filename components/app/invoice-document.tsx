@@ -347,7 +347,7 @@ function TotalRow({
       style={{
         display: "flex",
         justifyContent: "space-between",
-        alignItems: "baseline",
+        alignItems: "flex-start",
         gap: "4px",
         fontWeight: strong ? 700 : 400,
         fontSize: strong ? `${base * 1.1}px` : undefined,
@@ -357,7 +357,7 @@ function TotalRow({
         marginBottom: `${base * 0.1}px`,
       }}
     >
-      <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
+      <span style={{ flex: 1, minWidth: 0, wordBreak: "break-word" }}>{label}</span>
       <span style={{ whiteSpace: "nowrap", flexShrink: 0 }}>₹{value}</span>
     </div>
   );
