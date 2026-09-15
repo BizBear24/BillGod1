@@ -198,19 +198,6 @@ export function BillingPos({
   // Passed to Select.Root as `items` so Select.Value can resolve a label right
   // away — otherwise it only knows labels once the popup has opened once.
   const docTypeItems = React.useMemo(() => SALE_DOC_TYPES.map((t) => ({ value: t, label: SALE_DOC_TYPE_LABELS[t] })), []);
-  // Deduped by percent — several named rates (e.g. "GST 18%" and "IGST 18%")
-  // can share a rate, and the cart line only stores the number.
-  const taxRateOptions = React.useMemo(() => {
-    const seen = new Set<number>();
-    const opts: { value: string; label: string }[] = [];
-    for (const t of taxRates) {
-      const pct = parseFloat(t.ratePercent);
-      if (!Number.isFinite(pct) || seen.has(pct)) continue;
-      seen.add(pct);
-      opts.push({ value: String(pct), label: `${pct}% — ${t.name}` });
-    }
-    return opts.sort((a, b) => parseFloat(a.value) - parseFloat(b.value));
-  }, [taxRates]);
   const paymentMethodItems = React.useMemo(() => SALE_PAYMENT_METHODS.map((m) => ({ value: m, label: SALE_PAYMENT_METHOD_LABELS[m] })), []);
   const salespersonItems = React.useMemo(
     () => [{ value: "none", label: "No salesperson" }, ...salespersons.map((s) => ({ value: s.id, label: s.name }))],
@@ -562,8 +549,9 @@ export function BillingPos({
         <div className="grid gap-4 lg:grid-cols-[65fr_35fr]">
           <div className="space-y-4">
             {/* Invoice preview — the full line-item breakdown of what's been
-                added, on the left; scanning and checkout stay together on
-                the right. */}
+                added, on the left; the invoice-making stuff (customer,
+                discount, payment, checkout) stays together on the right.
+                Tax rate isn't editable here — it's set on the product. */}
             {cart.length > 0 && (
               <div className="overflow-x-auto rounded-lg border border-border">
                 <Table>
@@ -573,7 +561,6 @@ export function BillingPos({
                       <TableHead className="w-24">Qty</TableHead>
                       <TableHead className="w-28">Price</TableHead>
                       <TableHead className="w-24">Disc %</TableHead>
-                      <TableHead className="w-24">Tax %</TableHead>
                       <TableHead className="text-right">Line Total</TableHead>
                       <TableHead className="w-10" />
                     </TableRow>
@@ -624,13 +611,6 @@ export function BillingPos({
                               onChange={(e) => updateLine(l.productId, { discountPercent: parseFloat(e.target.value) || 0 })}
                             />
                           </TableCell>
-                          <TableCell>
-                            <TaxRateCell
-                              value={l.taxRatePercent}
-                              options={taxRateOptions}
-                              onChange={(percent) => updateLine(l.productId, { taxRatePercent: percent })}
-                            />
-                          </TableCell>
                           <TableCell className="text-right font-medium">
                             {money(line.lineTotal)}
                             {line.billDiscountAmount > 0 && (
@@ -652,59 +632,6 @@ export function BillingPos({
           </div>
 
           <div className="space-y-3">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                onKeyDown={handleScan}
-                placeholder="Search by name, item code, or scan barcode…"
-                className="pl-9"
-              />
-            </div>
-            <div className="grid gap-2 sm:grid-cols-2">
-              {filtered.map((p) => {
-                const stock = stockByProduct[warehouseId]?.[p.id] ?? 0;
-                const isOut = stock <= 0;
-                const isLow = !isOut && stock <= 10;
-                return (
-                  <div
-                    key={p.id}
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => addProduct(p)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        addProduct(p);
-                      }
-                    }}
-                    className={`relative flex cursor-pointer items-center justify-between rounded-xl border px-3 py-2.5 text-left text-sm transition-colors ${
-                      isOut
-                        ? "border-destructive/40 bg-destructive/10 opacity-70 hover:bg-destructive/15"
-                        : isLow
-                          ? "border-yellow-500/40 bg-yellow-500/10 hover:bg-yellow-500/15"
-                          : "border-border hover:border-primary/40 hover:bg-accent/40"
-                    }`}
-                  >
-                    {hasImage.has(p.id) && (
-                      <ProductPhotoIcon productId={p.id} productName={p.name} className="absolute -left-1.5 -top-1.5" />
-                    )}
-                    <div className="min-w-0">
-                      <p className="truncate font-medium">{p.name}</p>
-                      <p className="text-xs text-muted-foreground">{p.itemCode}</p>
-                      {isOut && <p className="text-xs font-medium text-destructive">Out of stock</p>}
-                      {isLow && <p className="text-xs font-medium text-yellow-500">Low stock ({stock})</p>}
-                    </div>
-                    <Badge variant="secondary" className="shrink-0 ml-2">
-                      {money(parseFloat(p.sellingPrice) || 0)}
-                    </Badge>
-                  </div>
-                );
-              })}
-              {filtered.length === 0 && <p className="col-span-2 py-6 text-center text-sm text-muted-foreground">No products match.</p>}
-            </div>
-
             <Card>
               <CardContent className="space-y-3 py-4">
                 <div className="grid grid-cols-2 gap-2">
@@ -1110,55 +1037,62 @@ export function BillingPos({
           </div>
         </div>
 
-        {/* Inventory preview — the quick item/qty view, kept below the fold
-            since the detailed invoice preview above (beside the scanner) is
-            what a cashier actually watches while scanning. */}
-        <Card>
-          <CardContent className="py-3">
-            {cart.length === 0 ? (
-              <p className="py-4 text-center text-sm text-muted-foreground">No items added yet</p>
-            ) : (
-              <div className="space-y-1.5">
-                {cart.map((l) => (
-                  <div key={l.productId} className="flex items-center gap-2 rounded-lg bg-accent/20 px-2.5 py-2">
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium leading-tight">{l.name}</p>
-                      <p className="text-xs text-muted-foreground">{money(l.unitPrice)} each</p>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        type="button"
-                        aria-label="Decrease quantity"
-                        onClick={() => l.quantity > 1 ? updateLine(l.productId, { quantity: l.quantity - 1 }) : removeLine(l.productId)}
-                        className="flex h-8 w-8 items-center justify-center rounded-md border border-border text-muted-foreground hover:bg-accent hover:text-foreground active:scale-95"
-                      >
-                        <Minus className="h-4 w-4" />
-                      </button>
-                      <span className="w-7 text-center text-base font-semibold tabular-nums">{l.quantity}</span>
-                      <button
-                        type="button"
-                        aria-label="Increase quantity"
-                        onClick={() => updateLine(l.productId, { quantity: l.quantity + 1 })}
-                        className="flex h-8 w-8 items-center justify-center rounded-md border border-border text-muted-foreground hover:bg-accent hover:text-foreground active:scale-95"
-                      >
-                        <Plus className="h-4 w-4" />
-                      </button>
-                    </div>
-                    <span className="w-16 text-right text-sm font-semibold tabular-nums">{money(l.quantity * l.unitPrice)}</span>
-                    <button
-                      type="button"
-                      aria-label="Remove item"
-                      onClick={() => removeLine(l.productId)}
-                      className="text-muted-foreground/50 hover:text-destructive"
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </button>
+        {/* Inventory / scanning — disconnected from the 65/35 split above,
+            full width at the bottom of the page. */}
+        <div className="space-y-3">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              onKeyDown={handleScan}
+              placeholder="Search by name, item code, or scan barcode…"
+              className="pl-9"
+            />
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            {filtered.map((p) => {
+              const stock = stockByProduct[warehouseId]?.[p.id] ?? 0;
+              const isOut = stock <= 0;
+              const isLow = !isOut && stock <= 10;
+              return (
+                <div
+                  key={p.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => addProduct(p)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      addProduct(p);
+                    }
+                  }}
+                  className={`relative flex cursor-pointer items-center justify-between rounded-xl border px-3 py-2.5 text-left text-sm transition-colors ${
+                    isOut
+                      ? "border-destructive/40 bg-destructive/10 opacity-70 hover:bg-destructive/15"
+                      : isLow
+                        ? "border-yellow-500/40 bg-yellow-500/10 hover:bg-yellow-500/15"
+                        : "border-border hover:border-primary/40 hover:bg-accent/40"
+                  }`}
+                >
+                  {hasImage.has(p.id) && (
+                    <ProductPhotoIcon productId={p.id} productName={p.name} className="absolute -left-1.5 -top-1.5" />
+                  )}
+                  <div className="min-w-0">
+                    <p className="truncate font-medium">{p.name}</p>
+                    <p className="text-xs text-muted-foreground">{p.itemCode}</p>
+                    {isOut && <p className="text-xs font-medium text-destructive">Out of stock</p>}
+                    {isLow && <p className="text-xs font-medium text-yellow-500">Low stock ({stock})</p>}
                   </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                  <Badge variant="secondary" className="shrink-0 ml-2">
+                    {money(parseFloat(p.sellingPrice) || 0)}
+                  </Badge>
+                </div>
+              );
+            })}
+            {filtered.length === 0 && <p className="col-span-full py-6 text-center text-sm text-muted-foreground">No products match.</p>}
+          </div>
+        </div>
       </TabsContent>
 
       <TabsContent value="held" className="space-y-3">
@@ -1368,64 +1302,6 @@ function PrintSaleButton({
         </div>
       )}
     </>
-  );
-}
-
-/**
- * Tax % for a cart line: a dropdown of the business's configured tax rates
- * when there are any, with a "Custom %" escape hatch for a one-off line —
- * rather than a bare number input that lets any figure through unchecked.
- */
-function TaxRateCell({
-  value,
-  options,
-  onChange,
-}: {
-  value: number;
-  options: { value: string; label: string }[];
-  onChange: (percent: number) => void;
-}) {
-  const matched = options.some((o) => parseFloat(o.value) === value);
-  const [custom, setCustom] = React.useState(!matched);
-
-  if (options.length === 0 || custom) {
-    return (
-      <div className="flex items-center gap-1">
-        <Input type="number" value={value} step="any" onChange={(e) => onChange(parseFloat(e.target.value) || 0)} />
-        {options.length > 0 && (
-          <Button type="button" variant="ghost" size="sm" className="shrink-0 px-1.5" onClick={() => setCustom(false)}>
-            Rates
-          </Button>
-        )}
-      </div>
-    );
-  }
-
-  const selectItems = [...options, { value: "custom", label: "Custom %" }];
-  return (
-    <Select
-      items={selectItems}
-      value={String(value)}
-      onValueChange={(v) => {
-        if (!v || v === "custom") {
-          setCustom(true);
-          return;
-        }
-        onChange(parseFloat(v) || 0);
-      }}
-    >
-      <SelectTrigger className="w-full">
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent>
-        {options.map((o) => (
-          <SelectItem key={o.value} value={o.value}>
-            {o.label}
-          </SelectItem>
-        ))}
-        <SelectItem value="custom">Custom %</SelectItem>
-      </SelectContent>
-    </Select>
   );
 }
 
