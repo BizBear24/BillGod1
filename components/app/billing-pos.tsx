@@ -536,6 +536,21 @@ export function BillingPos({
       </TabsList>
 
       <TabsContent value="sell" className="space-y-4">
+        {/* Quick scan — a duplicate of the search/scan box at the bottom, kept
+            here too so a barcode can be scanned straight in without scrolling
+            down to the full inventory browser. Same state, same handler. */}
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            onKeyDown={handleScan}
+            placeholder="Scan or type a barcode / item code…"
+            className="pl-9"
+            autoFocus
+          />
+        </div>
+
         {editingSaleId && (
           <div className="flex items-center justify-between rounded-lg border border-primary/30 bg-primary/5 px-4 py-2 text-sm">
             <span>Editing a held bill.</span>
