@@ -416,15 +416,21 @@ export function PurchasePos({
 
         <div className="grid gap-4 lg:grid-cols-5">
           <div className="space-y-3 lg:col-span-3">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                onKeyDown={handleScan}
-                placeholder="Search by name, item code, or scan barcode…"
-                className="pl-9"
-              />
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  onKeyDown={handleScan}
+                  placeholder="Search by name, item code, or scan barcode…"
+                  className="pl-9"
+                />
+              </div>
+              <Button variant="outline" size="sm" className="shrink-0" nativeButton={false} render={<Link href="/masters/products?add=product" />}>
+                <Plus className="h-3.5 w-3.5" />
+                Add New Product
+              </Button>
             </div>
             <div className="grid gap-2 sm:grid-cols-2">
               {filtered.map((p) => (

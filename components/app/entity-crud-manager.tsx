@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
@@ -125,7 +125,10 @@ export function EntityCrudManager<T extends Record<string, unknown> & { id: stri
   canManage: boolean;
   emptyLabel?: string;
 }) {
-  const [open, setOpen] = React.useState(false);
+  const searchParams = useSearchParams();
+  // Lets another screen (Purchase's "Add New Product") deep-link straight into
+  // this dialog via `?add=<kind>` instead of landing on a bare list page.
+  const [open, setOpen] = React.useState(() => searchParams.get("add") === kind);
   const [editing, setEditing] = React.useState<T | null>(null);
   const router = useRouter();
   const { icon: Icon, schema } = REGISTRY[kind];
