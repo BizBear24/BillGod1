@@ -15,6 +15,12 @@ export const PURCHASE_PAYMENT_METHOD_LABELS: Record<(typeof PURCHASE_PAYMENT_MET
   credit: "Credit (on account)",
 };
 
+export const GST_TYPES = ["cgst_sgst", "igst"] as const;
+export const GST_TYPE_LABELS: Record<(typeof GST_TYPES)[number], string> = {
+  cgst_sgst: "CGST + SGST (intra-state)",
+  igst: "IGST (inter-state)",
+};
+
 export const purchaseItemSchema = z.object({
   productId: z.string().min(1),
   itemCode: z.string().min(1),
@@ -46,6 +52,7 @@ export const createPurchaseSchema = z.object({
     .transform((v) => (v && v !== "none" ? v : undefined)),
   supplierId: z.string().min(1, "Select a supplier"),
   supplierInvoiceNumber: z.string().trim().optional(),
+  gstType: z.enum(GST_TYPES).default("cgst_sgst"),
   notes: z.string().trim().optional(),
   items: z.array(purchaseItemSchema).min(1, "Add at least one item"),
   payments: z.array(purchasePaymentSchema).optional(),

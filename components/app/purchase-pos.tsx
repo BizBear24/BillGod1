@@ -6,7 +6,14 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Search, Trash2, Plus, Minus, ShoppingBag, PauseCircle, X, Receipt, Ban, Printer, Tag, Mail } from "lucide-react";
 import { savePurchase, discardHeldPurchase, getPurchaseWithItems, cancelPurchase, getPurchaseInvoiceData, emailPurchaseOrderToSupplier } from "@/app/actions/purchases";
-import { PURCHASE_DOC_TYPES, PURCHASE_DOC_TYPE_LABELS, PURCHASE_PAYMENT_METHODS, PURCHASE_PAYMENT_METHOD_LABELS } from "@/lib/validation/purchases";
+import {
+  PURCHASE_DOC_TYPES,
+  PURCHASE_DOC_TYPE_LABELS,
+  PURCHASE_PAYMENT_METHODS,
+  PURCHASE_PAYMENT_METHOD_LABELS,
+  GST_TYPES,
+  GST_TYPE_LABELS,
+} from "@/lib/validation/purchases";
 import { PurchaseDocument } from "@/components/app/purchase-document";
 import type { InvoiceCompany } from "@/components/app/invoice-document";
 import { getPrintService, type PrintFormat } from "@/lib/print";
@@ -104,6 +111,8 @@ export function PurchasePos({
   const [supplierId, setSupplierId] = React.useState(suppliers[0]?.id ?? "");
   const [warehouseId, setWarehouseId] = useActiveWarehouse(businessId, warehouses);
   const [supplierInvoiceNumber, setSupplierInvoiceNumber] = React.useState("");
+  /** Whether this purchase's GST is one IGST line (inter-state) or split CGST+SGST (intra-state). */
+  const [gstType, setGstType] = React.useState<(typeof GST_TYPES)[number]>("cgst_sgst");
   const [originalPurchaseId, setOriginalPurchaseId] = React.useState("none");
   const [payments, setPayments] = React.useState<PaymentRow[]>([{ method: "cash", amount: 0 }]);
   const [editingId, setEditingId] = React.useState<string | null>(null);
@@ -121,6 +130,7 @@ export function PurchasePos({
   // Passed to Select.Root as `items` so Select.Value can resolve a label right
   // away — otherwise it only knows labels once the popup has opened once.
   const docTypeItems = React.useMemo(() => PURCHASE_DOC_TYPES.map((t) => ({ value: t, label: PURCHASE_DOC_TYPE_LABELS[t] })), []);
+  const gstTypeItems = React.useMemo(() => GST_TYPES.map((t) => ({ value: t, label: GST_TYPE_LABELS[t] })), []);
   const paymentMethodItems = React.useMemo(() => PURCHASE_PAYMENT_METHODS.map((m) => ({ value: m, label: PURCHASE_PAYMENT_METHOD_LABELS[m] })), []);
   const supplierItems = React.useMemo(() => suppliers.map((s) => ({ value: s.id, label: s.name })), [suppliers]);
   const warehouseItems = React.useMemo(() => warehouses.map((w) => ({ value: w.id, label: w.label })), [warehouses]);
@@ -205,6 +215,7 @@ export function PurchasePos({
     setSupplierId(suppliers[0]?.id ?? "");
     setWarehouseId(warehouses[0]?.id ?? "");
     setSupplierInvoiceNumber("");
+    setGstType("cgst_sgst");
     setOriginalPurchaseId("none");
     setPayments([{ method: "cash", amount: 0 }]);
     setEditingId(null);
@@ -239,6 +250,7 @@ export function PurchasePos({
       originalPurchaseId: docType === "purchase_return" ? originalPurchaseId : "none",
       supplierId,
       supplierInvoiceNumber,
+      gstType,
       items: cart.map((l) => ({
         productId: l.productId,
         itemCode: l.itemCode,
@@ -280,6 +292,7 @@ export function PurchasePos({
     setSupplierId(data.purchase.supplierId);
     setWarehouseId(data.purchase.warehouseId ?? warehouses[0]?.id ?? "");
     setSupplierInvoiceNumber(data.purchase.supplierInvoiceNumber ?? "");
+    setGstType(data.purchase.gstType);
     setOriginalPurchaseId(data.purchase.originalPurchaseId ?? "none");
     setCart(
       validItems.map((i) => ({
@@ -517,6 +530,18 @@ export function PurchasePos({
                   onChange={(e) => setSupplierInvoiceNumber(e.target.value)}
                   placeholder="Supplier invoice number (optional)"
                 />
+                <Select items={gstTypeItems} value={gstType} onValueChange={(v) => setGstType((v as (typeof GST_TYPES)[number]) ?? "cgst_sgst")}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {GST_TYPES.map((t) => (
+                      <SelectItem key={t} value={t}>
+                        {GST_TYPE_LABELS[t]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </CardContent>
             </Card>
 
@@ -530,10 +555,23 @@ export function PurchasePos({
                   <span className="text-muted-foreground">Discount</span>
                   <span>-{money(totals.discountAmount)}</span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Tax</span>
-                  <span>{money(totals.taxAmount)}</span>
-                </div>
+                {gstType === "igst" ? (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">IGST</span>
+                    <span>{money(totals.taxAmount)}</span>
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">CGST</span>
+                      <span>{money(totals.taxAmount / 2)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">SGST</span>
+                      <span>{money(totals.taxAmount / 2)}</span>
+                    </div>
+                  </>
+                )}
                 <div className="flex justify-between border-t border-border pt-1.5 text-base font-semibold">
                   <span>Total</span>
                   <span>{money(totals.totalAmount)}</span>

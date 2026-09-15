@@ -14,6 +14,8 @@ import { users } from "./auth";
 export const purchaseDocTypeEnum = pgEnum("purchase_doc_type", ["purchase_order", "purchase", "purchase_return"]);
 export const purchaseStatusEnum = pgEnum("purchase_status", ["draft", "completed", "cancelled"]);
 export const purchasePaymentMethodEnum = pgEnum("purchase_payment_method", ["cash", "upi", "card", "credit"]);
+/** Indian GST split: the whole rate as IGST (inter-state), or halved into CGST + SGST (intra-state). */
+export const gstTypeEnum = pgEnum("gst_type", ["igst", "cgst_sgst"]);
 
 export const purchases = pgTable(
   "purchases",
@@ -36,6 +38,9 @@ export const purchases = pgTable(
 
     supplierId: text("supplier_id").notNull().references(() => suppliers.id),
     supplierInvoiceNumber: text("supplier_invoice_number"),
+
+    /** Whether this purchase's tax prints as one IGST line or split CGST+SGST. */
+    gstType: gstTypeEnum("gst_type").notNull().default("cgst_sgst"),
 
     subtotal: numeric("subtotal", { precision: 14, scale: 2 }).notNull().default("0"),
     discountAmount: numeric("discount_amount", { precision: 14, scale: 2 }).notNull().default("0"),

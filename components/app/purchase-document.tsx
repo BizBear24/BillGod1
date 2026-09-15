@@ -43,6 +43,8 @@ export type PurchaseDetail = {
   totalAmount: string;
   amountPaid: string;
   supplierInvoiceNumber: string | null;
+  /** Whether tax prints as one IGST line (inter-state) or split CGST+SGST (intra-state). */
+  gstType: "igst" | "cgst_sgst";
   supplierName: string;
   supplierPhone: string | null;
   supplierGstin: string | null;
@@ -226,7 +228,16 @@ export function PurchaseDocument({
       <div style={{ marginLeft: "auto", width: narrow ? "100%" : "45%", breakInside: "avoid", pageBreakInside: "avoid" }}>
         {design.showSubtotal && <TotalRow label="Subtotal" value={money(purchase.subtotal)} base={base} />}
         {design.showDiscount && num(purchase.discountAmount) > 0 && <TotalRow label="Discount" value={`-${money(purchase.discountAmount)}`} base={base} />}
-        {design.showTax && num(purchase.taxAmount) > 0 && <TotalRow label="Tax" value={money(purchase.taxAmount)} base={base} />}
+        {design.showTax && num(purchase.taxAmount) > 0 && (
+          purchase.gstType === "igst" ? (
+            <TotalRow label="IGST" value={money(purchase.taxAmount)} base={base} />
+          ) : (
+            <>
+              <TotalRow label="CGST" value={money(num(purchase.taxAmount) / 2)} base={base} />
+              <TotalRow label="SGST" value={money(num(purchase.taxAmount) / 2)} base={base} />
+            </>
+          )
+        )}
         {design.showRoundOff && num(purchase.roundOff) !== 0 && <TotalRow label="Round off" value={money(purchase.roundOff)} base={base} />}
         <TotalRow label="Total" value={money(purchase.totalAmount)} base={base} strong accent={design.accentColor} />
         {design.showPaid && <TotalRow label="Paid" value={money(purchase.amountPaid)} base={base} />}
