@@ -211,7 +211,7 @@ function escapeXml(value: string): string {
 /** Renders an encoded symbol as a standalone SVG string — printable and copy-pasteable. */
 export function barcodeToSvg(
   encoded: EncodedBarcode,
-  options: { moduleWidth?: number; height?: number; showText?: boolean; textSize?: number } = {}
+  options: { moduleWidth?: number; height?: number; showText?: boolean; textSize?: number; targetWidth?: number; targetHeight?: number } = {}
 ): string {
   const moduleWidth = options.moduleWidth ?? 2;
   const height = options.height ?? 60;
@@ -220,6 +220,12 @@ export function barcodeToSvg(
   const quietZone = 10 * moduleWidth;
   const width = encoded.modules.length * moduleWidth + quietZone * 2;
   const totalHeight = height + (showText ? textSize + 4 : 0);
+  // Bars are laid out in this natural coordinate space; `targetWidth`/`targetHeight`
+  // (below) let a caller stretch the rendered SVG to any display size independently
+  // in each axis without recomputing bar geometry — the viewBox scaling stays vector,
+  // so it never blurs.
+  const displayWidth = options.targetWidth ?? width;
+  const displayHeight = options.targetHeight ?? totalHeight;
 
   const bars: string[] = [];
   let index = 0;
@@ -240,7 +246,7 @@ export function barcodeToSvg(
     ? `<text x="${width / 2}" y="${totalHeight - 1}" text-anchor="middle" font-family="monospace" font-size="${textSize}" fill="#000">${escapeXml(encoded.text)}</text>`
     : "";
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${totalHeight}" viewBox="0 0 ${width} ${totalHeight}"><rect width="${width}" height="${totalHeight}" fill="#fff"/>${bars.join("")}${text}</svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${displayWidth}" height="${displayHeight}" viewBox="0 0 ${width} ${totalHeight}" preserveAspectRatio="none"><rect width="${width}" height="${totalHeight}" fill="#fff"/>${bars.join("")}${text}</svg>`;
 }
 
 /**

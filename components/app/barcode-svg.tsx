@@ -33,7 +33,7 @@ function qrToSvg(value: string, size: number): string {
 export function renderBarcodeSvg(
   symbology: LabelSymbology,
   value: string,
-  options: { moduleWidth?: number; height?: number; showText?: boolean; qrSize?: number } = {}
+  options: { moduleWidth?: number; height?: number; showText?: boolean; qrSize?: number; targetWidth?: number; targetHeight?: number } = {}
 ): { svg: string; error: string | null } {
   try {
     if (!value.trim()) return { svg: "", error: "No value" };
@@ -43,6 +43,8 @@ export function renderBarcodeSvg(
         moduleWidth: options.moduleWidth,
         height: options.height,
         showText: options.showText,
+        targetWidth: options.targetWidth,
+        targetHeight: options.targetHeight,
       }),
       error: null,
     };
@@ -58,6 +60,8 @@ export function BarcodeSvg({
   height,
   showText = true,
   qrSize,
+  targetWidth,
+  targetHeight,
   className,
 }: {
   symbology: LabelSymbology;
@@ -66,11 +70,15 @@ export function BarcodeSvg({
   height?: number;
   showText?: boolean;
   qrSize?: number;
+  /** Stretches the rendered SVG to this exact display width (px), independent of height — for fully custom, non-blurring resizing. */
+  targetWidth?: number;
+  /** Stretches the rendered SVG to this exact display height (px), independent of width. */
+  targetHeight?: number;
   className?: string;
 }) {
   const { svg, error } = React.useMemo(
-    () => renderBarcodeSvg(symbology, value, { moduleWidth, height, showText, qrSize }),
-    [symbology, value, moduleWidth, height, showText, qrSize]
+    () => renderBarcodeSvg(symbology, value, { moduleWidth, height, showText, qrSize, targetWidth, targetHeight }),
+    [symbology, value, moduleWidth, height, showText, qrSize, targetWidth, targetHeight]
   );
 
   if (error) return <span className="text-xs text-destructive">{error}</span>;

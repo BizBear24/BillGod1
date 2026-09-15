@@ -99,18 +99,26 @@ function LabelElementView({
   if (element.type === "barcode" || element.type === "qr") {
     const value = resolveLabelValue(element.value, data) || data.itemCode;
     const symbology = (element.type === "qr" ? "qr" : element.symbology) as LabelSymbology;
+    const pxPer = unit === "mm" ? 3.78 : pxPerMm;
+    const boxW = Math.max(12, element.w * pxPer);
+    const boxH = Math.max(12, element.h * pxPer);
     return (
       <div style={{ ...common, display: "flex", alignItems: "center", justifyContent: "center" }}>
         <BarcodeSvg
           symbology={symbology}
           value={value}
-          // The SVG is scaled to the element box, so the design's millimetres
-          // decide the printed size rather than these pixel hints.
+          // Bar geometry is computed at a fixed module width for crisp proportions,
+          // then the whole SVG is stretched to the element's own box via
+          // targetWidth/targetHeight — both axes resize independently and stay
+          // vector (no raster blur) instead of the barcode's natural aspect ratio
+          // being fit-and-letterboxed into the box.
           moduleWidth={1}
-          height={Math.max(12, element.h * (unit === "mm" ? 3.78 : pxPerMm) * (element.showValue ? 0.72 : 0.95))}
-          qrSize={Math.max(20, Math.min(element.w, element.h) * (unit === "mm" ? 3.78 : pxPerMm))}
+          height={Math.max(12, boxH * (element.showValue ? 0.72 : 0.95))}
+          targetWidth={boxW}
+          targetHeight={boxH}
+          qrSize={Math.max(20, Math.min(boxW, boxH))}
           showText={element.type === "barcode" && element.showValue}
-          className="max-h-full max-w-full [&>svg]:h-full [&>svg]:w-full"
+          className="max-h-full max-w-full [&>svg]:max-h-full [&>svg]:max-w-full"
         />
       </div>
     );
