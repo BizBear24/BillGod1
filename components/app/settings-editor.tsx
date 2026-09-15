@@ -6,9 +6,11 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
 import { z } from "zod";
-import { Building2, User, Lock, ChevronDown, ChevronUp, Save } from "lucide-react";
+import { Building2, User, Lock, ChevronDown, ChevronUp, Save, DatabaseBackup, Download } from "lucide-react";
 import { updateBusiness, updateCompany } from "@/app/actions/org";
 import { updateProfile, changePassword } from "@/app/actions/auth";
+import { exportAllData } from "@/app/actions/export";
+import { getFilesystemService, base64ToBytes } from "@/lib/fs";
 import { BUSINESS_TYPES } from "@/lib/validation/org";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,11 +31,13 @@ export function SettingsEditor({
   business,
   companies,
   canManage,
+  canExportAll,
 }: {
   user: User;
   business: Business;
   companies: Company[];
   canManage: boolean;
+  canExportAll: boolean;
 }) {
   return (
     <div className="space-y-6 max-w-2xl">
@@ -41,7 +45,47 @@ export function SettingsEditor({
       <PasswordSection />
       {canManage && <BusinessSection business={business} />}
       {canManage && companies.map((c) => <CompanySection key={c.id} company={c} />)}
+      {canExportAll && <DataExportSection />}
     </div>
+  );
+}
+
+/* -------------------------------------------------------------- Data export */
+
+function DataExportSection() {
+  const [exporting, setExporting] = React.useState(false);
+
+  async function handleExport() {
+    setExporting(true);
+    try {
+      const result = await exportAllData();
+      if (!result.ok || !result.base64) {
+        toast.error(result.ok ? "Could not build the export." : result.error);
+        return;
+      }
+      const fileName = `billgod-full-export-${new Date().toISOString().slice(0, 10)}.xlsx`;
+      await getFilesystemService().saveFile(
+        fileName,
+        base64ToBytes(result.base64),
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      );
+      toast.success("Export downloaded");
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  return (
+    <Section icon={DatabaseBackup} title="Export All Data">
+      <p className="mb-3 text-sm text-muted-foreground">
+        Downloads every product, customer, supplier, sale, purchase and stock movement as one Excel workbook — a full backup you can keep off-platform
+        or hand to an accountant.
+      </p>
+      <Button type="button" variant="secondary" disabled={exporting} onClick={handleExport} className="gap-2">
+        <Download className="h-4 w-4" />
+        {exporting ? "Building export…" : "Export all data"}
+      </Button>
+    </Section>
   );
 }
 

@@ -370,5 +370,11 @@ export async function getSettingsData() {
   const db = await getDb();
   const [business] = await db.select().from(businesses).where(eq(businesses.id, membership.businessId)).limit(1);
   const companyRows = await db.select().from(companies).where(eq(companies.businessId, membership.businessId));
-  return { business, companies: companyRows, user: sessionUser, canManage: can(membership.role, PERMISSIONS.COMPANY_MANAGE) };
+  return {
+    business,
+    companies: companyRows,
+    user: sessionUser,
+    canManage: can(membership.role, PERMISSIONS.COMPANY_MANAGE),
+    canExportAll: can(membership.role, PERMISSIONS.BUSINESS_MANAGE),
+  };
 }

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Search, Trash2, Boxes, ArrowLeftRight, ClipboardList, AlertTriangle, Skull, Gauge, ScanBarcode } from "lucide-react";
 import { createTransfer, createAdjustment } from "@/app/actions/inventory";
+import { updateProductDiscount } from "@/app/actions/products";
 import { ADJUSTMENT_REASONS, ADJUSTMENT_REASON_LABELS } from "@/lib/validation/inventory";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,7 +17,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatDate } from "@/lib/utils";
 
 type Warehouse = { id: string; name: string; label: string };
-type Product = { id: string; itemCode: string; name: string; reorderLevel: string; minStock: string };
+type Product = { id: string; itemCode: string; name: string; reorderLevel: string; minStock: string; defaultDiscountPercent: string };
 type StockByProduct = Record<string, { total: number; byWarehouse: Record<string, number> }>;
 type Transfer = { id: string; docNumber: string; fromWarehouseId: string; toWarehouseId: string; notes: string | null; createdAt: Date };
 type Adjustment = { id: string; docNumber: string; warehouseId: string; reason: string; notes: string | null; createdAt: Date };
@@ -95,7 +96,7 @@ export function InventoryManager({
       </TabsContent>
 
       <TabsContent value="levels">
-        <StockLevelsTable products={products} warehouses={warehouses} stockByProduct={stockByProduct} />
+        <StockLevelsTable products={products} warehouses={warehouses} stockByProduct={stockByProduct} canManage={canManage} />
       </TabsContent>
 
       <TabsContent value="transfers" className="space-y-4">
@@ -205,10 +206,12 @@ function StockLevelsTable({
   products,
   warehouses,
   stockByProduct,
+  canManage,
 }: {
   products: Product[];
   warehouses: Warehouse[];
   stockByProduct: StockByProduct;
+  canManage: boolean;
 }) {
   const [search, setSearch] = React.useState("");
   const filtered = React.useMemo(() => {
@@ -237,6 +240,7 @@ function StockLevelsTable({
                   {showPerWarehouse && warehouses.map((w) => <TableHead key={w.id}>{w.label}</TableHead>)}
                   <TableHead>Total Stock</TableHead>
                   <TableHead>Reorder Level</TableHead>
+                  <TableHead>Discount %</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -273,6 +277,9 @@ function StockLevelsTable({
                         )}
                       </TableCell>
                       <TableCell className="text-muted-foreground">{reorder > 0 ? qty(reorder) : "—"}</TableCell>
+                      <TableCell>
+                        <DiscountCell productId={p.id} value={p.defaultDiscountPercent} canManage={canManage} />
+                      </TableCell>
                     </TableRow>
                   );
                 })}
@@ -282,6 +289,49 @@ function StockLevelsTable({
         )}
       </CardContent>
     </Card>
+  );
+}
+
+/** Inline-editable default discount %, saved on blur — the item-wise discount the product carries into every future bill. */
+function DiscountCell({ productId, value, canManage }: { productId: string; value: string; canManage: boolean }) {
+  const router = useRouter();
+  const [draft, setDraft] = React.useState(value);
+  const [saving, setSaving] = React.useState(false);
+  React.useEffect(() => setDraft(value), [value]);
+
+  async function save() {
+    const next = Math.max(0, Math.min(100, parseFloat(draft) || 0));
+    setDraft(String(next));
+    if (next === (parseFloat(value) || 0)) return;
+    setSaving(true);
+    const result = await updateProductDiscount(productId, next);
+    setSaving(false);
+    if (!result.ok) {
+      toast.error(result.error);
+      return;
+    }
+    toast.success(`Discount set to ${next}%`);
+    router.refresh();
+  }
+
+  if (!canManage) return <span className="text-muted-foreground">{parseFloat(value) || 0}%</span>;
+
+  return (
+    <div className="flex items-center gap-1">
+      <Input
+        type="number"
+        min={0}
+        max={100}
+        step="any"
+        value={draft}
+        disabled={saving}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={save}
+        onKeyDown={(e) => e.key === "Enter" && (e.currentTarget as HTMLInputElement).blur()}
+        className="h-7 w-16 text-right"
+      />
+      <span className="text-xs text-muted-foreground">%</span>
+    </div>
   );
 }
 

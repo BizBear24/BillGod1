@@ -1,5 +1,6 @@
 "use server";
 
+import { z } from "zod";
 import { eq, and, inArray, sql } from "drizzle-orm";
 import { getDb } from "@/db/client";
 import {
@@ -139,6 +140,29 @@ export async function updateProduct(id: string, input: unknown): Promise<ActionR
     }
     throw err;
   }
+}
+
+/** Quick single-field update for the Inventory screen's inline discount editor — doesn't require the rest of the product form. */
+export async function updateProductDiscount(id: string, discountPercent: number): Promise<ActionResult> {
+  const gate = await requireGate(PERMISSIONS.PRODUCTS_MANAGE);
+  if (!gate.ok) return gate;
+  const parsed = z.coerce.number().min(0).max(100).safeParse(discountPercent);
+  if (!parsed.success) return { ok: false, error: "Enter a discount between 0 and 100" };
+
+  const db = await getDb();
+  await db
+    .update(products)
+    .set({ defaultDiscountPercent: String(parsed.data), updatedAt: new Date() })
+    .where(and(eq(products.id, id), eq(products.businessId, gate.membership.businessId)));
+  await logAudit({
+    businessId: gate.membership.businessId,
+    userId: gate.sessionUser.userId,
+    action: "product.updated",
+    entityType: "product",
+    entityId: id,
+    after: { defaultDiscountPercent: parsed.data },
+  });
+  return { ok: true };
 }
 
 export async function deleteProduct(id: string): Promise<ActionResult> {

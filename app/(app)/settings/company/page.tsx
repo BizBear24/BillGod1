@@ -22,6 +22,7 @@ export default async function SettingsCompanyPage() {
         business={data.business}
         companies={data.companies}
         canManage={data.canManage}
+        canExportAll={data.canExportAll}
       />
     </div>
   );

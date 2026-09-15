@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Search, Trash2, Plus, Minus, ShoppingCart, PauseCircle, X, Receipt, Ban, Award, Ticket, Printer } from "lucide-react";
+import { Search, Trash2, Plus, Minus, ShoppingCart, PauseCircle, X, Receipt, Ban, Award, Ticket, Printer, CircleCheck } from "lucide-react";
 import { saveSale, discardHeldSale, getSaleWithItems, cancelSale, getInvoiceData } from "@/app/actions/sales";
 import { checkCoupon } from "@/app/actions/engagement";
 import { quickCreateCustomer } from "@/app/actions/parties";
@@ -140,6 +140,10 @@ export function BillingPos({
   const [notes, setNotes] = React.useState("");
   /** A manual "% off everything" the cashier can type in for this bill, on top of any loyalty tier discount. */
   const [billDiscountPercent, setBillDiscountPercent] = React.useState(0);
+  // When on, the bill discount survives `resetForm()` (i.e. across multiple bills)
+  // instead of zeroing out after each sale — for a running promo like "14% off today".
+  const [persistBillDiscount, setPersistBillDiscount] = React.useState(false);
+  const [discountPrefLoaded, setDiscountPrefLoaded] = React.useState(false);
   const [redeemPoints, setRedeemPoints] = React.useState(0);
   const [coupon, setCoupon] = React.useState<{ code: string; discountAmount: number; description: string } | null>(null);
   const [couponDraft, setCouponDraft] = React.useState("");
@@ -154,6 +158,34 @@ export function BillingPos({
   // Keeps freshly-created customers visible after this reloads with the
   // server's customer list post-save, without losing one created moments ago.
   React.useEffect(() => setCustomerList(customers), [customers]);
+
+  // A persisted bill discount is per-terminal (localStorage), not per-account,
+  // since it's meant to track a till running a promo, not follow the cashier.
+  const discountStorageKey = `billgod:persistedBillDiscount:${businessId}`;
+  React.useEffect(() => {
+    try {
+      const raw = localStorage.getItem(discountStorageKey);
+      if (raw) {
+        const saved = JSON.parse(raw) as { percent: number };
+        setPersistBillDiscount(true);
+        setBillDiscountPercent(saved.percent);
+      }
+    } catch {
+      // Ignore unavailable/corrupt storage — the field just starts at 0.
+    }
+    setDiscountPrefLoaded(true);
+  }, [discountStorageKey]);
+  React.useEffect(() => {
+    // Skip until the load effect above has run, or it would immediately wipe
+    // out what it just read (this effect fires with the pre-load defaults first).
+    if (!discountPrefLoaded) return;
+    try {
+      if (persistBillDiscount) localStorage.setItem(discountStorageKey, JSON.stringify({ percent: billDiscountPercent }));
+      else localStorage.removeItem(discountStorageKey);
+    } catch {
+      // Ignore unavailable storage.
+    }
+  }, [discountPrefLoaded, persistBillDiscount, billDiscountPercent, discountStorageKey]);
 
   const taxRateById = React.useMemo(() => Object.fromEntries(taxRates.map((t) => [t.id, parseFloat(t.ratePercent)])), [taxRates]);
   const productById = React.useMemo(() => Object.fromEntries(products.map((p) => [p.id, p])), [products]);
@@ -340,7 +372,8 @@ export function BillingPos({
     setWarehouseId(warehouses[0]?.id ?? "");
     setOriginalSaleId("none");
     setNotes("");
-    setBillDiscountPercent(0);
+    // A persisted discount is meant to carry over to the next bill, not reset with it.
+    if (!persistBillDiscount) setBillDiscountPercent(0);
     setRedeemPoints(0);
     setCoupon(null);
     setCouponDraft("");
@@ -516,17 +549,6 @@ export function BillingPos({
       </TabsList>
 
       <TabsContent value="sell" className="space-y-4">
-        {justCompleted && (
-          <div className="flex items-center justify-between rounded-lg border border-chart-3/40 bg-chart-3/5 px-4 py-2 text-sm">
-            <span>{justCompleted.docNumber} completed.</span>
-            <div className="flex items-center gap-2">
-              <PrintSaleButton saleId={justCompleted.id} company={company} design={invoiceDesign} label={`Print ${justCompleted.docNumber}`} />
-              <Button variant="ghost" size="icon" aria-label="Dismiss" onClick={() => setJustCompleted(null)}>
-                <X className="h-3.5 w-3.5" />
-              </Button>
-            </div>
-          </div>
-        )}
         {editingSaleId && (
           <div className="flex items-center justify-between rounded-lg border border-primary/30 bg-primary/5 px-4 py-2 text-sm">
             <span>Editing a held bill.</span>
@@ -538,7 +560,7 @@ export function BillingPos({
         )}
 
         <div className="grid gap-4 lg:grid-cols-5">
-          <div className="space-y-3 lg:col-span-3">
+          <div className="space-y-3 lg:col-span-2">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
@@ -593,54 +615,94 @@ export function BillingPos({
             </div>
           </div>
 
-          <div className="space-y-4 lg:col-span-2">
-            {/* Cart preview — shows items and quick qty controls */}
-            <Card>
-              <CardContent className="py-3">
-                {cart.length === 0 ? (
-                  <p className="py-4 text-center text-sm text-muted-foreground">No items added yet</p>
-                ) : (
-                  <div className="space-y-1.5">
-                    {cart.map((l) => (
-                      <div key={l.productId} className="flex items-center gap-2 rounded-lg bg-accent/20 px-2.5 py-2">
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-medium leading-tight">{l.name}</p>
-                          <p className="text-xs text-muted-foreground">{money(l.unitPrice)} each</p>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <button
-                            type="button"
-                            aria-label="Decrease quantity"
-                            onClick={() => l.quantity > 1 ? updateLine(l.productId, { quantity: l.quantity - 1 }) : removeLine(l.productId)}
-                            className="flex h-6 w-6 items-center justify-center rounded-md border border-border text-muted-foreground hover:bg-accent hover:text-foreground"
-                          >
-                            <Minus className="h-3 w-3" />
-                          </button>
-                          <span className="w-6 text-center text-sm font-semibold tabular-nums">{l.quantity}</span>
-                          <button
-                            type="button"
-                            aria-label="Increase quantity"
-                            onClick={() => updateLine(l.productId, { quantity: l.quantity + 1 })}
-                            className="flex h-6 w-6 items-center justify-center rounded-md border border-border text-muted-foreground hover:bg-accent hover:text-foreground"
-                          >
-                            <Plus className="h-3 w-3" />
-                          </button>
-                        </div>
-                        <span className="w-16 text-right text-sm font-semibold tabular-nums">{money(l.quantity * l.unitPrice)}</span>
-                        <button
-                          type="button"
-                          aria-label="Remove item"
-                          onClick={() => removeLine(l.productId)}
-                          className="text-muted-foreground/50 hover:text-destructive"
-                        >
-                          <X className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+          <div className="space-y-4 lg:col-span-3">
+            {/* Invoice preview — the full line-item breakdown, right beside the
+                scanning box so each scan's detail shows up without scrolling. */}
+            {cart.length > 0 && (
+              <div className="overflow-x-auto rounded-lg border border-border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Item</TableHead>
+                      <TableHead className="w-24">Qty</TableHead>
+                      <TableHead className="w-28">Price</TableHead>
+                      <TableHead className="w-24">Disc %</TableHead>
+                      <TableHead className="w-24">Tax %</TableHead>
+                      <TableHead className="text-right">Line Total</TableHead>
+                      <TableHead className="w-10" />
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {cart.map((l, index) => {
+                      // Straight from the shared engine, so the row already
+                      // carries its share of any bill-level discount and the
+                      // column adds up to the Total above it.
+                      const line = computed.lines[index];
+                      return (
+                        <TableRow key={l.productId}>
+                          <TableCell>
+                            <p className="font-medium">{l.name}</p>
+                            <p className="text-xs text-muted-foreground">{l.itemCode}</p>
+                            {movesStock && productById[l.productId]?.trackSerial && (
+                              <SerialPicker
+                                line={l}
+                                available={serialsByProduct[l.productId] ?? []}
+                                typed={serialsComeBackIn}
+                                takenElsewhere={cart.filter((other) => other.productId === l.productId && other !== l).flatMap((o) => o.serials)}
+                                onChange={(serials) => updateLine(l.productId, { serials })}
+                              />
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <Input
+                              type="number"
+                              value={l.quantity}
+                              min={0.001}
+                              step="any"
+                              onChange={(e) => updateLine(l.productId, { quantity: parseFloat(e.target.value) || 0 })}
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Input
+                              type="number"
+                              value={l.unitPrice}
+                              step="any"
+                              onChange={(e) => updateLine(l.productId, { unitPrice: parseFloat(e.target.value) || 0 })}
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Input
+                              type="number"
+                              value={l.discountPercent}
+                              step="any"
+                              onChange={(e) => updateLine(l.productId, { discountPercent: parseFloat(e.target.value) || 0 })}
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <TaxRateCell
+                              value={l.taxRatePercent}
+                              options={taxRateOptions}
+                              onChange={(percent) => updateLine(l.productId, { taxRatePercent: percent })}
+                            />
+                          </TableCell>
+                          <TableCell className="text-right font-medium">
+                            {money(line.lineTotal)}
+                            {line.billDiscountAmount > 0 && (
+                              <span className="block text-xs font-normal text-muted-foreground">incl. -{money(line.billDiscountAmount)}</span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <Button variant="ghost" size="icon" aria-label="Remove item" onClick={() => removeLine(l.productId)}>
+                              <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
 
             <Card>
               <CardContent className="space-y-3 py-4">
@@ -798,6 +860,16 @@ export function BillingPos({
                     className="h-7 w-20 text-right"
                   />
                 </div>
+                {(billDiscountPercent > 0 || persistBillDiscount) && docType !== "sale_return" && (
+                  <label className="flex items-center gap-1.5 pb-1 text-xs text-muted-foreground">
+                    <input
+                      type="checkbox"
+                      checked={persistBillDiscount}
+                      onChange={(e) => setPersistBillDiscount(e.target.checked)}
+                    />
+                    Keep this discount applied on future bills
+                  </label>
+                )}
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Subtotal</span>
                   <span>{money(totals.subtotal)}</span>
@@ -1003,102 +1075,89 @@ export function BillingPos({
               </CardContent>
             </Card>
 
+            {justCompleted && (
+              <div className="flex items-center justify-between rounded-lg border border-chart-3/40 bg-chart-3/5 px-4 py-2 text-sm">
+                <span>{justCompleted.docNumber} completed.</span>
+                <div className="flex items-center gap-2">
+                  <PrintSaleButton saleId={justCompleted.id} company={company} design={invoiceDesign} label={`Print ${justCompleted.docNumber}`} />
+                  <Button variant="ghost" size="icon" aria-label="Dismiss" onClick={() => setJustCompleted(null)}>
+                    <X className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              </div>
+            )}
+
             <div className="flex gap-2">
-              <Button variant="secondary" className="flex-1" disabled={saving || cart.length === 0} onClick={() => handleSave(true)}>
+              <Button
+                variant="secondary"
+                className="h-14 flex-1 gap-2 text-base font-semibold"
+                disabled={saving || cart.length === 0}
+                onClick={() => handleSave(true)}
+              >
+                <PauseCircle className="h-5 w-5" />
                 Hold Bill
               </Button>
-              <Button className="flex-1" disabled={saving || cart.length === 0} onClick={() => handleSave(false)}>
+              <Button
+                className="h-14 flex-[2] gap-2 text-base font-semibold"
+                disabled={saving || cart.length === 0}
+                onClick={() => handleSave(false)}
+              >
+                <CircleCheck className="h-5 w-5" />
                 {saving ? "Saving…" : `Complete ${SALE_DOC_TYPE_LABELS[docType]}`}
               </Button>
             </div>
           </div>
         </div>
 
-        {cart.length > 0 && (
-          <div className="overflow-x-auto rounded-lg border border-border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Item</TableHead>
-                  <TableHead className="w-24">Qty</TableHead>
-                  <TableHead className="w-28">Price</TableHead>
-                  <TableHead className="w-24">Disc %</TableHead>
-                  <TableHead className="w-24">Tax %</TableHead>
-                  <TableHead className="text-right">Line Total</TableHead>
-                  <TableHead className="w-10" />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {cart.map((l, index) => {
-                  // Straight from the shared engine, so the row already
-                  // carries its share of any bill-level discount and the
-                  // column adds up to the Total above it.
-                  const line = computed.lines[index];
-                  return (
-                    <TableRow key={l.productId}>
-                      <TableCell>
-                        <p className="font-medium">{l.name}</p>
-                        <p className="text-xs text-muted-foreground">{l.itemCode}</p>
-                        {movesStock && productById[l.productId]?.trackSerial && (
-                          <SerialPicker
-                            line={l}
-                            available={serialsByProduct[l.productId] ?? []}
-                            typed={serialsComeBackIn}
-                            takenElsewhere={cart.filter((other) => other.productId === l.productId && other !== l).flatMap((o) => o.serials)}
-                            onChange={(serials) => updateLine(l.productId, { serials })}
-                          />
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <Input
-                          type="number"
-                          value={l.quantity}
-                          min={0.001}
-                          step="any"
-                          onChange={(e) => updateLine(l.productId, { quantity: parseFloat(e.target.value) || 0 })}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <Input
-                          type="number"
-                          value={l.unitPrice}
-                          step="any"
-                          onChange={(e) => updateLine(l.productId, { unitPrice: parseFloat(e.target.value) || 0 })}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <Input
-                          type="number"
-                          value={l.discountPercent}
-                          step="any"
-                          onChange={(e) => updateLine(l.productId, { discountPercent: parseFloat(e.target.value) || 0 })}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <TaxRateCell
-                          value={l.taxRatePercent}
-                          options={taxRateOptions}
-                          onChange={(percent) => updateLine(l.productId, { taxRatePercent: percent })}
-                        />
-                      </TableCell>
-                      <TableCell className="text-right font-medium">
-                        {money(line.lineTotal)}
-                        {line.billDiscountAmount > 0 && (
-                          <span className="block text-xs font-normal text-muted-foreground">incl. -{money(line.billDiscountAmount)}</span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <Button variant="ghost" size="icon" aria-label="Remove item" onClick={() => removeLine(l.productId)}>
-                          <Trash2 className="h-3.5 w-3.5 text-destructive" />
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </div>
-        )}
+        {/* Inventory preview — the quick item/qty view, kept below the fold
+            since the detailed invoice preview above (beside the scanner) is
+            what a cashier actually watches while scanning. */}
+        <Card>
+          <CardContent className="py-3">
+            {cart.length === 0 ? (
+              <p className="py-4 text-center text-sm text-muted-foreground">No items added yet</p>
+            ) : (
+              <div className="space-y-1.5">
+                {cart.map((l) => (
+                  <div key={l.productId} className="flex items-center gap-2 rounded-lg bg-accent/20 px-2.5 py-2">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium leading-tight">{l.name}</p>
+                      <p className="text-xs text-muted-foreground">{money(l.unitPrice)} each</p>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        aria-label="Decrease quantity"
+                        onClick={() => l.quantity > 1 ? updateLine(l.productId, { quantity: l.quantity - 1 }) : removeLine(l.productId)}
+                        className="flex h-8 w-8 items-center justify-center rounded-md border border-border text-muted-foreground hover:bg-accent hover:text-foreground active:scale-95"
+                      >
+                        <Minus className="h-4 w-4" />
+                      </button>
+                      <span className="w-7 text-center text-base font-semibold tabular-nums">{l.quantity}</span>
+                      <button
+                        type="button"
+                        aria-label="Increase quantity"
+                        onClick={() => updateLine(l.productId, { quantity: l.quantity + 1 })}
+                        className="flex h-8 w-8 items-center justify-center rounded-md border border-border text-muted-foreground hover:bg-accent hover:text-foreground active:scale-95"
+                      >
+                        <Plus className="h-4 w-4" />
+                      </button>
+                    </div>
+                    <span className="w-16 text-right text-sm font-semibold tabular-nums">{money(l.quantity * l.unitPrice)}</span>
+                    <button
+                      type="button"
+                      aria-label="Remove item"
+                      onClick={() => removeLine(l.productId)}
+                      className="text-muted-foreground/50 hover:text-destructive"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </TabsContent>
 
       <TabsContent value="held" className="space-y-3">
