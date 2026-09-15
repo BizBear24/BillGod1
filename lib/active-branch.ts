@@ -36,11 +36,21 @@ export function setStoredActiveWarehouse(businessId: string, warehouseId: string
  * pick if it is still one of them, otherwise the first one.
  */
 export function useActiveWarehouse(businessId: string, warehouses: { id: string }[]): [string, (id: string) => void] {
-  const [warehouseId, setWarehouseIdState] = React.useState(() => {
+  // The lazy initializer must return the same thing on the server and on the
+  // client's first render (localStorage doesn't exist on the server), or
+  // React's hydration check flags every attribute downstream of it as
+  // mismatched. So this starts at the server-safe default and only reaches
+  // into localStorage afterward, in an effect that runs post-hydration.
+  const [warehouseId, setWarehouseIdState] = React.useState(() => warehouses[0]?.id ?? "");
+
+  React.useEffect(() => {
     const stored = getStoredActiveWarehouse(businessId);
-    if (stored && warehouses.some((w) => w.id === stored)) return stored;
-    return warehouses[0]?.id ?? "";
-  });
+    if (stored && warehouses.some((w) => w.id === stored) && stored !== warehouseId) {
+      setWarehouseIdState(stored);
+    }
+    // Only meant to run once, right after mount, to apply the stored pick.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [businessId]);
 
   const setWarehouseId = React.useCallback(
     (id: string) => {
