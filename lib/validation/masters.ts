@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { optionalId, optionalNumber, optionalText } from "./common";
+import { optionalId, optionalNumber, optionalText, GST_TYPES } from "./common";
 
 export const nameOnlySchema = z.object({
   name: z.string().trim().min(1, "Enter a name"),
@@ -53,6 +53,8 @@ export const taxRateSchema = z.object({
   name: z.string().trim().min(1, "Enter a name"),
   ratePercent: z.coerce.number().min(0).max(100),
   cessPercent: optionalNumber(z.coerce.number().min(0).max(100)),
+  /** Every rate is inevitably IGST or CGST+SGST — only the percent is what varies per rate. */
+  gstType: z.enum(GST_TYPES).default("cgst_sgst"),
 });
 export type TaxRateInput = z.infer<typeof taxRateSchema>;
 

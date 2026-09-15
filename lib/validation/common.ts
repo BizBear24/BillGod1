@@ -23,6 +23,10 @@ export const GST_TYPE_LABELS: Record<(typeof GST_TYPES)[number], string> = {
   cgst_sgst: "CGST + SGST (intra-state)",
   igst: "IGST (inter-state)",
 };
+export const GST_TYPE_SHORT_LABELS: Record<(typeof GST_TYPES)[number], string> = {
+  cgst_sgst: "CGST+SGST",
+  igst: "IGST",
+};
 
 const isBlank = (value: unknown) =>
   value === null || value === undefined || (typeof value === "string" && value.trim() === "");

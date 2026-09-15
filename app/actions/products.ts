@@ -86,7 +86,6 @@ function toDbValues(businessId: string, data: ReturnType<typeof productSchema.pa
     colorId: data.colorId ?? null,
     hsnId: data.hsnId ?? null,
     taxRateId: data.taxRateId ?? null,
-    gstType: data.gstType,
     barcode: data.barcode || null,
     purchasePrice: data.purchasePrice !== undefined ? String(data.purchasePrice) : undefined,
     sellingPrice: data.sellingPrice !== undefined ? String(data.sellingPrice) : undefined,

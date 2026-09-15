@@ -37,12 +37,11 @@ type Product = {
   barcode: string | null;
   purchasePrice: string;
   taxRateId: string | null;
-  /** Default GST split carried onto a new cart line — still overridable per line. */
-  gstType: (typeof GST_TYPES)[number];
   trackSerial: boolean;
 };
 type Supplier = { id: string; name: string; phone: string | null };
-type TaxRate = { id: string; ratePercent: string };
+/** A rate's GST type is inevitably one of the two — only its percent is custom — and carries onto a new cart line via the product's chosen rate, still overridable per line. */
+type TaxRate = { id: string; ratePercent: string; gstType: (typeof GST_TYPES)[number] };
 type Warehouse = { id: string; name: string; label: string };
 type HeldPurchase = { id: string; docNumber: string; docType: string; totalAmount: string; updatedAt: Date };
 type ReturnablePurchase = { id: string; docNumber: string; totalAmount: string; supplierId: string; createdAt: Date };
@@ -129,6 +128,7 @@ export function PurchasePos({
   const [justCompleted, setJustCompleted] = React.useState<{ id: string; docNumber: string; docType: string } | null>(null);
 
   const taxRateById = React.useMemo(() => Object.fromEntries(taxRates.map((t) => [t.id, parseFloat(t.ratePercent)])), [taxRates]);
+  const taxRateGstTypeById = React.useMemo(() => Object.fromEntries(taxRates.map((t) => [t.id, t.gstType])), [taxRates]);
   const productById = React.useMemo(() => Object.fromEntries(products.map((p) => [p.id, p])), [products]);
   // A purchase order commits nothing, so it never asks for serials; a receipt
   // and a return both move real units and do.
@@ -171,7 +171,7 @@ export function PurchasePos({
           unitCost: parseFloat(p.purchasePrice) || 0,
           discountPercent: 0,
           taxRatePercent: p.taxRateId ? taxRateById[p.taxRateId] ?? 0 : 0,
-          gstType: p.gstType,
+          gstType: p.taxRateId ? taxRateGstTypeById[p.taxRateId] ?? "cgst_sgst" : "cgst_sgst",
           batchNumber: "",
           expiryDate: "",
           serials: [],

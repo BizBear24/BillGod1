@@ -3,11 +3,18 @@ import { ArrowLeft } from "lucide-react";
 import { getMastersData, createTaxRate, updateTaxRate, deleteTaxRate, createHsnCode, updateHsnCode, deleteHsnCode } from "@/app/actions/masters";
 import { EntityCrudManager } from "@/components/app/entity-crud-manager";
 import { EntityImportExport } from "@/components/app/entity-import-export";
+import { GST_TYPES, GST_TYPE_LABELS, GST_TYPE_SHORT_LABELS } from "@/lib/validation/common";
 
 export default async function HsnPage() {
   const data = await getMastersData();
-  const taxRateOptions = [{ value: "none", label: "No tax rate" }, ...data.taxRates.map((t) => ({ value: t.id, label: `${t.name} (${t.ratePercent}%)` }))];
-  const taxRateLookup = Object.fromEntries(data.taxRates.map((t) => [t.id, `${t.name} (${t.ratePercent}%)`]));
+  const gstTypeOptions = GST_TYPES.map((t) => ({ value: t, label: GST_TYPE_LABELS[t] }));
+  const taxRateOptions = [
+    { value: "none", label: "No tax rate" },
+    ...data.taxRates.map((t) => ({ value: t.id, label: `${t.name} (${t.ratePercent}% — ${GST_TYPE_SHORT_LABELS[t.gstType]})` })),
+  ];
+  const taxRateLookup = Object.fromEntries(
+    data.taxRates.map((t) => [t.id, `${t.name} (${t.ratePercent}% — ${GST_TYPE_SHORT_LABELS[t.gstType]})`])
+  );
 
   return (
     <div className="space-y-6">
@@ -28,14 +35,17 @@ export default async function HsnPage() {
         columns={[
           { key: "name", label: "Name" },
           { key: "ratePercent", label: "Rate %" },
+          { key: "gstType", label: "GST Type", format: "lookup", lookup: GST_TYPE_SHORT_LABELS },
           { key: "cessPercent", label: "Cess %" },
         ]}
         fields={[
           { name: "name", label: "Name", type: "text", placeholder: "e.g. GST 18%" },
           { name: "ratePercent", label: "Rate %", type: "text", placeholder: "18" },
+          // Inevitably one of exactly two — only the rate % above is custom per entry.
+          { name: "gstType", label: "GST Type", type: "select", options: gstTypeOptions },
           { name: "cessPercent", label: "Cess %", type: "text", placeholder: "0" },
         ]}
-        defaultValues={{ name: "", ratePercent: "0", cessPercent: "0" }}
+        defaultValues={{ name: "", ratePercent: "0", gstType: "cgst_sgst", cessPercent: "0" }}
         createAction={createTaxRate}
         updateAction={updateTaxRate}
         deleteAction={deleteTaxRate}

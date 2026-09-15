@@ -20,7 +20,7 @@ import { productSchema } from "@/lib/validation/products";
 import { customerSchema, supplierSchema } from "@/lib/validation/parties";
 import { accountSchema } from "@/lib/validation/accounting";
 import { loyaltyTierSchema, couponSchema } from "@/lib/validation/engagement";
-import { NONE } from "@/lib/validation/common";
+import { NONE, GST_TYPES, GST_TYPE_SHORT_LABELS } from "@/lib/validation/common";
 import { createMasterValue } from "@/app/actions/masters";
 import { getProductImage, setProductImage } from "@/app/actions/products";
 import { resizeImageFile } from "@/lib/images/resize-client";
@@ -518,6 +518,7 @@ function CreatableSelect({
   const form = useFormContext();
   const [adding, setAdding] = React.useState(false);
   const [draft, setDraft] = React.useState("");
+  const [draftGstType, setDraftGstType] = React.useState<(typeof GST_TYPES)[number]>("cgst_sgst");
   const [busy, setBusy] = React.useState(false);
   /** Values created in this dialog, which the server props do not know about yet. */
   const [added, setAdded] = React.useState<{ value: string; label: string }[]>([]);
@@ -544,7 +545,12 @@ function CreatableSelect({
     const text = draft.trim();
     if (!text) return;
     setBusy(true);
-    const context = field.dependsOn && dependsOnValue && dependsOnValue !== NONE ? { sectionId: dependsOnValue } : undefined;
+    const context =
+      field.createKind === "taxRate"
+        ? { gstType: draftGstType }
+        : field.dependsOn && dependsOnValue && dependsOnValue !== NONE
+          ? { sectionId: dependsOnValue }
+          : undefined;
     const result = await createMasterValue(field.createKind, text, context);
     setBusy(false);
     if (!result.ok) {
@@ -557,6 +563,7 @@ function CreatableSelect({
     }
     toast.success(`Added ${noun} "${result.label ?? text}"`);
     setDraft("");
+    setDraftGstType("cgst_sgst");
     setAdding(false);
     // Re-read the server props so the new value survives closing the dialog.
     router.refresh();
@@ -589,6 +596,26 @@ function CreatableSelect({
                 : `New ${noun}`
           }
         />
+        {field.createKind === "taxRate" && (
+          // The two GST types are inevitable — only the percent above is custom
+          // per rate — so this is a fixed choice, not free text.
+          <Select
+            items={GST_TYPES.map((t) => ({ value: t, label: GST_TYPE_SHORT_LABELS[t] }))}
+            value={draftGstType}
+            onValueChange={(v) => setDraftGstType((v as (typeof GST_TYPES)[number]) ?? "cgst_sgst")}
+          >
+            <SelectTrigger className="w-36 shrink-0">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {GST_TYPES.map((t) => (
+                <SelectItem key={t} value={t}>
+                  {GST_TYPE_SHORT_LABELS[t]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
         <Button type="button" size="sm" disabled={busy || draft.trim().length === 0} onClick={() => void create()}>
           {busy ? "Adding…" : "Add"}
         </Button>
@@ -600,6 +627,7 @@ function CreatableSelect({
           onClick={() => {
             setAdding(false);
             setDraft("");
+            setDraftGstType("cgst_sgst");
           }}
         >
           Cancel

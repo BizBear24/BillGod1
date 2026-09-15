@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { optionalId, optionalNumber, optionalText, GST_TYPES } from "./common";
+import { optionalId, optionalNumber, optionalText } from "./common";
 
 export const productSchema = z.object({
   itemCode: z.string().trim().min(1, "Enter an item code"),
@@ -15,8 +15,6 @@ export const productSchema = z.object({
   colorId: optionalId,
   hsnId: optionalId,
   taxRateId: optionalId,
-  /** Default GST split for this product on a purchase line — still overridable per line. */
-  gstType: z.enum(GST_TYPES).default("cgst_sgst"),
 
   barcode: optionalText,
   purchasePrice: optionalNumber(z.coerce.number().min(0)),

@@ -141,6 +141,13 @@
       "when": 1789491937962,
       "tag": "0019_loose_patriot",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1789495337371,
+      "tag": "0020_bored_robin_chapel",
+      "breakpoints": true
     }
   ]
 }

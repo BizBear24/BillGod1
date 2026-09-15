@@ -35,6 +35,7 @@ import {
   taxRateSchema,
   hsnCodeSchema,
 } from "@/lib/validation/masters";
+import { GST_TYPES, GST_TYPE_SHORT_LABELS } from "@/lib/validation/common";
 import type { ActionResult } from "./auth";
 
 async function requireMembership() {
@@ -439,7 +440,13 @@ export async function createTaxRate(input: unknown): Promise<ActionResult> {
   const db = await getDb();
   const [row] = await db
     .insert(taxRates)
-    .values({ businessId: gate.membership.businessId, name: parsed.data.name, ratePercent: String(parsed.data.ratePercent), cessPercent: String(parsed.data.cessPercent ?? 0) })
+    .values({
+      businessId: gate.membership.businessId,
+      name: parsed.data.name,
+      ratePercent: String(parsed.data.ratePercent),
+      cessPercent: String(parsed.data.cessPercent ?? 0),
+      gstType: parsed.data.gstType,
+    })
     .returning();
   await logAudit({ businessId: gate.membership.businessId, userId: gate.sessionUser.userId, action: "tax_rate.created", entityType: "tax_rate", entityId: row.id, after: parsed.data });
   return { ok: true };
@@ -453,7 +460,12 @@ export async function updateTaxRate(id: string, input: unknown): Promise<ActionR
   const db = await getDb();
   await db
     .update(taxRates)
-    .set({ name: parsed.data.name, ratePercent: String(parsed.data.ratePercent), cessPercent: String(parsed.data.cessPercent ?? 0) })
+    .set({
+      name: parsed.data.name,
+      ratePercent: String(parsed.data.ratePercent),
+      cessPercent: String(parsed.data.cessPercent ?? 0),
+      gstType: parsed.data.gstType,
+    })
     .where(and(eq(taxRates.id, id), eq(taxRates.businessId, gate.membership.businessId)));
   await logAudit({ businessId: gate.membership.businessId, userId: gate.sessionUser.userId, action: "tax_rate.updated", entityType: "tax_rate", entityId: id, after: parsed.data });
   return { ok: true };
@@ -519,8 +531,8 @@ export async function deleteHsnCode(id: string): Promise<ActionResult> {
 export async function createMasterValue(
   kind: InlineMasterKind,
   value: string,
-  /** Extra context a kind may need beyond its own name — currently only subsection's parent. */
-  context?: { sectionId?: string }
+  /** Extra context a kind may need beyond its own name — subsection's parent section, or a tax rate's GST type. */
+  context?: { sectionId?: string; gstType?: (typeof GST_TYPES)[number] }
 ): Promise<ActionResult & { id?: string; label?: string }> {
   const gate = await requireManage();
   if (!gate.ok) return gate;
@@ -600,18 +612,21 @@ export async function createMasterValue(
         return { ok: true, id: row.id, label: row.code };
       }
       case "taxRate": {
-        // "18" or "18%" is all a shop should have to type for GST 18%.
+        // "18" or "18%" is all a shop should have to type for the rate — the
+        // GST type (IGST vs CGST+SGST) is the other, mandatory half, picked
+        // in the UI rather than typed, since it's always one of exactly two.
         const percent = parseFloat(text.replace("%", "").trim());
         if (!Number.isFinite(percent)) {
           return { ok: false, error: 'Enter the rate as a number, for example "18".' };
         }
-        const parsed = taxRateSchema.safeParse({ name: `GST ${percent}%`, ratePercent: percent });
+        const gstType = context?.gstType && GST_TYPES.includes(context.gstType) ? context.gstType : "cgst_sgst";
+        const parsed = taxRateSchema.safeParse({ name: `GST ${percent}% (${GST_TYPE_SHORT_LABELS[gstType]})`, ratePercent: percent, gstType });
         if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
         const [row] = await db
           .insert(taxRates)
-          .values({ businessId, name: parsed.data.name, ratePercent: String(parsed.data.ratePercent) })
+          .values({ businessId, name: parsed.data.name, ratePercent: String(parsed.data.ratePercent), gstType: parsed.data.gstType })
           .returning();
-        return { ok: true, id: row.id, label: `${row.name} (${parseFloat(row.ratePercent)}%)` };
+        return { ok: true, id: row.id, label: row.name };
       }
       default:
         return { ok: false, error: "That cannot be created here." };
