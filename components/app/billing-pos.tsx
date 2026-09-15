@@ -560,64 +560,10 @@ export function BillingPos({
         )}
 
         <div className="grid gap-4 lg:grid-cols-5">
-          <div className="space-y-3 lg:col-span-2">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                onKeyDown={handleScan}
-                placeholder="Search by name, item code, or scan barcode…"
-                className="pl-9"
-              />
-            </div>
-            <div className="grid gap-2 sm:grid-cols-2">
-              {filtered.map((p) => {
-                const stock = stockByProduct[warehouseId]?.[p.id] ?? 0;
-                const isOut = stock <= 0;
-                const isLow = !isOut && stock <= 10;
-                return (
-                  <div
-                    key={p.id}
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => addProduct(p)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        addProduct(p);
-                      }
-                    }}
-                    className={`relative flex cursor-pointer items-center justify-between rounded-xl border px-3 py-2.5 text-left text-sm transition-colors ${
-                      isOut
-                        ? "border-destructive/40 bg-destructive/10 opacity-70 hover:bg-destructive/15"
-                        : isLow
-                          ? "border-yellow-500/40 bg-yellow-500/10 hover:bg-yellow-500/15"
-                          : "border-border hover:border-primary/40 hover:bg-accent/40"
-                    }`}
-                  >
-                    {hasImage.has(p.id) && (
-                      <ProductPhotoIcon productId={p.id} productName={p.name} className="absolute -left-1.5 -top-1.5" />
-                    )}
-                    <div className="min-w-0">
-                      <p className="truncate font-medium">{p.name}</p>
-                      <p className="text-xs text-muted-foreground">{p.itemCode}</p>
-                      {isOut && <p className="text-xs font-medium text-destructive">Out of stock</p>}
-                      {isLow && <p className="text-xs font-medium text-yellow-500">Low stock ({stock})</p>}
-                    </div>
-                    <Badge variant="secondary" className="shrink-0 ml-2">
-                      {money(parseFloat(p.sellingPrice) || 0)}
-                    </Badge>
-                  </div>
-                );
-              })}
-              {filtered.length === 0 && <p className="col-span-2 py-6 text-center text-sm text-muted-foreground">No products match.</p>}
-            </div>
-          </div>
-
           <div className="space-y-4 lg:col-span-3">
-            {/* Invoice preview — the full line-item breakdown, right beside the
-                scanning box so each scan's detail shows up without scrolling. */}
+            {/* Invoice preview — the full line-item breakdown of what's been
+                added, on the left; scanning and checkout stay together on
+                the right. */}
             {cart.length > 0 && (
               <div className="overflow-x-auto rounded-lg border border-border">
                 <Table>
@@ -703,6 +649,61 @@ export function BillingPos({
                 </Table>
               </div>
             )}
+          </div>
+
+          <div className="space-y-3 lg:col-span-2">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                onKeyDown={handleScan}
+                placeholder="Search by name, item code, or scan barcode…"
+                className="pl-9"
+              />
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {filtered.map((p) => {
+                const stock = stockByProduct[warehouseId]?.[p.id] ?? 0;
+                const isOut = stock <= 0;
+                const isLow = !isOut && stock <= 10;
+                return (
+                  <div
+                    key={p.id}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => addProduct(p)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        addProduct(p);
+                      }
+                    }}
+                    className={`relative flex cursor-pointer items-center justify-between rounded-xl border px-3 py-2.5 text-left text-sm transition-colors ${
+                      isOut
+                        ? "border-destructive/40 bg-destructive/10 opacity-70 hover:bg-destructive/15"
+                        : isLow
+                          ? "border-yellow-500/40 bg-yellow-500/10 hover:bg-yellow-500/15"
+                          : "border-border hover:border-primary/40 hover:bg-accent/40"
+                    }`}
+                  >
+                    {hasImage.has(p.id) && (
+                      <ProductPhotoIcon productId={p.id} productName={p.name} className="absolute -left-1.5 -top-1.5" />
+                    )}
+                    <div className="min-w-0">
+                      <p className="truncate font-medium">{p.name}</p>
+                      <p className="text-xs text-muted-foreground">{p.itemCode}</p>
+                      {isOut && <p className="text-xs font-medium text-destructive">Out of stock</p>}
+                      {isLow && <p className="text-xs font-medium text-yellow-500">Low stock ({stock})</p>}
+                    </div>
+                    <Badge variant="secondary" className="shrink-0 ml-2">
+                      {money(parseFloat(p.sellingPrice) || 0)}
+                    </Badge>
+                  </div>
+                );
+              })}
+              {filtered.length === 0 && <p className="col-span-2 py-6 text-center text-sm text-muted-foreground">No products match.</p>}
+            </div>
 
             <Card>
               <CardContent className="space-y-3 py-4">
