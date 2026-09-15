@@ -88,8 +88,17 @@ function cellValue(key: InvoiceColumnKey, line: InvoiceLine, index: number): str
       return String(num(line.quantity));
     case "unitPrice":
       return money(line.unitPrice);
-    case "discountPercent":
-      return num(line.discountPercent) ? `${num(line.discountPercent)}%` : "";
+    case "discountPercent": {
+      // The line's own % plus its share of any bill-wide/loyalty-tier
+      // discount — so a line discounted only at the bill level still shows
+      // a percentage here instead of printing blank.
+      const lineSubtotal = num(line.quantity) * num(line.unitPrice);
+      if (lineSubtotal <= 0) return "";
+      const ownDiscount = lineSubtotal * (num(line.discountPercent) / 100);
+      const totalDiscount = ownDiscount + num(line.billDiscountAmount);
+      const effectivePercent = (totalDiscount / lineSubtotal) * 100;
+      return effectivePercent > 0 ? `${Math.round(effectivePercent * 100) / 100}%` : "";
+    }
     case "billDiscountAmount":
       return num(line.billDiscountAmount) ? money(line.billDiscountAmount) : "";
     case "taxRatePercent":

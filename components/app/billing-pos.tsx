@@ -625,6 +625,14 @@ export function BillingPos({
                               step="any"
                               onChange={(e) => updateLine(l.productId, { discountPercent: parseFloat(e.target.value) || 0 })}
                             />
+                            {line.billDiscountAmount > 0 && line.lineSubtotal > 0 && (
+                              // The input above only edits this line's own %; a bill-wide or
+                              // loyalty-tier discount also lands on this line without being
+                              // typed in here, so show the true combined % actually applied.
+                              <p className="mt-0.5 text-[11px] text-muted-foreground">
+                                {round2(((line.lineDiscount + line.billDiscountAmount) / line.lineSubtotal) * 100)}% total
+                              </p>
+                            )}
                           </TableCell>
                           <TableCell className="text-right font-medium">
                             {money(line.lineTotal)}
