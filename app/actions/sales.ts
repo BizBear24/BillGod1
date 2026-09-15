@@ -194,6 +194,7 @@ export async function saveSale(saleId: string | null, input: unknown): Promise<A
     discountPercent: String(item.discountPercent ?? 0),
     billDiscountAmount: String(totals.lines[i].billDiscountAmount),
     taxRatePercent: String(item.taxRatePercent ?? 0),
+    gstType: item.gstType ?? "cgst_sgst",
     taxAmount: String(totals.lines[i].taxAmount),
     lineTotal: String(totals.lines[i].lineTotal),
   }));
@@ -909,6 +910,7 @@ export async function getInvoiceData(saleId: string) {
       discountPercent: saleItems.discountPercent,
       billDiscountAmount: saleItems.billDiscountAmount,
       taxRatePercent: saleItems.taxRatePercent,
+      gstType: saleItems.gstType,
       taxAmount: saleItems.taxAmount,
       lineTotal: saleItems.lineTotal,
       hsn: hsnCodes.code,

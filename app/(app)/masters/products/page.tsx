@@ -4,7 +4,7 @@ import { getProductsPageData, createProduct, updateProduct, deleteProduct, getPr
 import { EntityCrudManager, type CrudField } from "@/components/app/entity-crud-manager";
 import { ProductImport } from "@/components/app/product-import";
 import { ProductPhotoManager } from "@/components/app/product-photo-manager";
-import { GST_TYPE_SHORT_LABELS } from "@/lib/validation/common";
+import { GST_TYPES, GST_TYPE_LABELS, GST_TYPE_SHORT_LABELS } from "@/lib/validation/common";
 
 const NONE = { value: "none", label: "—" };
 
@@ -22,11 +22,8 @@ export default async function ProductsPage() {
   const sizeOptions = [NONE, ...data.sizes.map((s) => ({ value: s.id, label: s.name }))];
   const colorOptions = [NONE, ...data.colors.map((c) => ({ value: c.id, label: c.name }))];
   const hsnOptions = [NONE, ...data.hsnCodes.map((h) => ({ value: h.id, label: h.code }))];
-  const taxRateOptions = [
-    NONE,
-    ...data.taxRates.map((t) => ({ value: t.id, label: `${t.name} (${t.ratePercent}% — ${GST_TYPE_SHORT_LABELS[t.gstType]})` })),
-  ];
-  const taxRateGstTypeLookup = Object.fromEntries(data.taxRates.map((t) => [t.id, GST_TYPE_SHORT_LABELS[t.gstType]]));
+  const taxRateOptions = [NONE, ...data.taxRates.map((t) => ({ value: t.id, label: `${t.name} (${t.ratePercent}%)` }))];
+  const gstTypeOptions = GST_TYPES.map((t) => ({ value: t, label: GST_TYPE_LABELS[t] }));
   const categoryLookup = Object.fromEntries(data.categories.map((c) => [c.id, c.name]));
   const imageIdSet = new Set(imageProductIds);
   const productRows = data.products.map((p) => ({ ...p, _hasImage: imageIdSet.has(p.id) }));
@@ -44,6 +41,10 @@ export default async function ProductsPage() {
     { name: "colorId", label: "Color", type: "select", options: colorOptions, createKind: "color" },
     { name: "hsnId", label: "HSN Code", type: "select", options: hsnOptions, createKind: "hsnCode" },
     { name: "taxRateId", label: "Tax Rate (GST %)", type: "select", options: taxRateOptions, createKind: "taxRate" },
+    // The rate above is only the percent — whether it applies as one IGST
+    // amount or split CGST+SGST depends on the transaction, so it's a
+    // separate toggle here rather than baked into the Tax Rate master.
+    { name: "gstType", label: "GST Type", type: "select", options: gstTypeOptions },
     { name: "barcode", label: "Barcode", type: "text" },
     { name: "purchasePrice", label: "Purchase Price", type: "text", placeholder: "0.00" },
     { name: "sellingPrice", label: "Selling Price", type: "text", placeholder: "0.00" },
@@ -83,7 +84,7 @@ export default async function ProductsPage() {
           { key: "sellingPrice", label: "Selling Price", format: "currency" },
           { key: "mrp", label: "MRP", format: "currency" },
           { key: "defaultDiscountPercent", label: "Default Disc %" },
-          { key: "taxRateId", label: "GST Type", format: "lookup", lookup: taxRateGstTypeLookup },
+          { key: "gstType", label: "GST Type", format: "lookup", lookup: GST_TYPE_SHORT_LABELS },
         ]}
         fields={fields}
         defaultValues={{
@@ -99,6 +100,7 @@ export default async function ProductsPage() {
           colorId: "none",
           hsnId: "none",
           taxRateId: "none",
+          gstType: "cgst_sgst",
           barcode: "",
           purchasePrice: "0",
           sellingPrice: "0",

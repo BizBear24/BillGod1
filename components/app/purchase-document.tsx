@@ -4,6 +4,7 @@ import * as React from "react";
 import { BarcodeSvg } from "@/components/app/barcode-svg";
 import { INVOICE_PAPERS, amountInWords, type InvoiceDesign } from "@/lib/print/templates";
 import { formatDateTime } from "@/lib/utils";
+import { sumGstSplits } from "@/lib/gst";
 import type { InvoiceCompany } from "@/components/app/invoice-document";
 
 /**
@@ -79,8 +80,8 @@ export function PurchaseDocument({
   const balance = num(purchase.totalAmount) - num(purchase.amountPaid);
   // Each line picks its own GST type, so the printed total splits IGST and
   // CGST+SGST separately rather than assuming the whole document is one or the other.
-  const igstAmount = lines.filter((l) => l.gstType === "igst").reduce((s, l) => s + num(l.taxAmount), 0);
-  const cgstSgstAmount = lines.filter((l) => l.gstType !== "igst").reduce((s, l) => s + num(l.taxAmount), 0);
+  const { igst: igstAmount, cgst, sgst } = sumGstSplits(lines.map((l) => ({ taxAmount: num(l.taxAmount), gstType: l.gstType })));
+  const cgstSgstAmount = cgst + sgst;
 
   return (
     <div

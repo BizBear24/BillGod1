@@ -7,8 +7,10 @@ import { Search, Trash2, Plus, Minus, ShoppingCart, PauseCircle, X, Receipt, Ban
 import { saveSale, discardHeldSale, getSaleWithItems, cancelSale, getInvoiceData } from "@/app/actions/sales";
 import { checkCoupon } from "@/app/actions/engagement";
 import { quickCreateCustomer } from "@/app/actions/parties";
-import { SALE_DOC_TYPES, SALE_DOC_TYPE_LABELS, SALE_PAYMENT_METHODS, SALE_PAYMENT_METHOD_LABELS } from "@/lib/validation/sales";
+import { SALE_DOC_TYPES, SALE_DOC_TYPE_LABELS, SALE_PAYMENT_METHODS, SALE_PAYMENT_METHOD_LABELS, GST_TYPES, GST_TYPE_LABELS } from "@/lib/validation/sales";
+import { GST_TYPE_SHORT_LABELS } from "@/lib/validation/common";
 import { computeSaleTotals, round2 } from "@/lib/sales/totals";
+import { sumGstSplits } from "@/lib/gst";
 import { resolveTier, type TierRow } from "@/lib/loyalty/tiers";
 import { useActiveWarehouse } from "@/lib/active-branch";
 import { ProductPhotoIcon } from "@/components/app/product-photo-icon";
@@ -33,6 +35,8 @@ type Product = {
   sellingPrice: string;
   mrp: string;
   taxRateId: string | null;
+  /** IGST vs CGST+SGST for this product — carries onto a new cart line, still overridable per line. */
+  gstType: (typeof GST_TYPES)[number];
   trackSerial: boolean;
   /** A standing discount set on the product master — prefills this line's Disc %, still overridable per sale. */
   defaultDiscountPercent: string;
@@ -74,6 +78,8 @@ type CartLine = {
   unitPrice: number;
   discountPercent: number;
   taxRatePercent: number;
+  /** Decided per item, not per document — a bill can mix in-state and out-of-state lines. */
+  gstType: (typeof GST_TYPES)[number];
   /** Only used by products flagged to track serials; one entry per unit. */
   serials: string[];
 };
@@ -198,6 +204,7 @@ export function BillingPos({
   // Passed to Select.Root as `items` so Select.Value can resolve a label right
   // away — otherwise it only knows labels once the popup has opened once.
   const docTypeItems = React.useMemo(() => SALE_DOC_TYPES.map((t) => ({ value: t, label: SALE_DOC_TYPE_LABELS[t] })), []);
+  const gstTypeItems = React.useMemo(() => GST_TYPES.map((t) => ({ value: t, label: GST_TYPE_LABELS[t] })), []);
   const paymentMethodItems = React.useMemo(() => SALE_PAYMENT_METHODS.map((m) => ({ value: m, label: SALE_PAYMENT_METHOD_LABELS[m] })), []);
   const salespersonItems = React.useMemo(
     () => [{ value: "none", label: "No salesperson" }, ...salespersons.map((s) => ({ value: s.id, label: s.name }))],
@@ -301,6 +308,7 @@ export function BillingPos({
           unitPrice: parseFloat(p.sellingPrice) || 0,
           discountPercent: parseFloat(p.defaultDiscountPercent) || 0,
           taxRatePercent: p.taxRateId ? taxRateById[p.taxRateId] ?? 0 : 0,
+          gstType: p.gstType,
           serials: [],
         },
       ];
@@ -337,13 +345,20 @@ export function BillingPos({
     // Points settle part of the bill without money changing hands, so they
     // reduce what is still due alongside the payments.
     const redeemedValue = Math.min(round2(redeemPoints * loyalty.currencyPerPoint), computed.totalAmount);
+    // Each line picks its own GST type, so the bill can mix in-state and
+    // out-of-state sales — IGST and CGST/SGST are totalled separately.
+    const { igst: igstAmount, cgst, sgst } = sumGstSplits(
+      cart.map((l, i) => ({ taxAmount: computed.lines[i]?.taxAmount ?? 0, gstType: l.gstType }))
+    );
     return {
       ...computed,
       amountPaid,
       redeemedValue,
+      igstAmount,
+      cgstSgstAmount: cgst + sgst,
       due: round2(computed.totalAmount - amountPaid - redeemedValue),
     };
-  }, [computed, payments, redeemPoints, loyalty.currencyPerPoint]);
+  }, [computed, payments, redeemPoints, loyalty.currencyPerPoint, cart]);
 
   // Redeeming more than the bill is worth just burns points, so cap the
   // "Max" shortcut at what this bill can actually absorb.
@@ -431,6 +446,7 @@ export function BillingPos({
         unitPrice: l.unitPrice,
         discountPercent: l.discountPercent,
         taxRatePercent: l.taxRatePercent,
+        gstType: l.gstType,
         serialNumbers: l.serials.join(","),
       })),
       payments: isDraft ? [] : payments.filter((p) => p.amount > 0),
@@ -476,6 +492,7 @@ export function BillingPos({
         unitPrice: parseFloat(i.unitPrice),
         discountPercent: parseFloat(i.discountPercent),
         taxRatePercent: parseFloat(i.taxRatePercent),
+        gstType: i.gstType,
         serials: [],
       }))
     );
@@ -576,6 +593,7 @@ export function BillingPos({
                       <TableHead className="w-24">Qty</TableHead>
                       <TableHead className="w-28">Price</TableHead>
                       <TableHead className="w-24">Disc %</TableHead>
+                      <TableHead className="w-32">GST</TableHead>
                       <TableHead className="text-right">Line Total</TableHead>
                       <TableHead className="w-10" />
                     </TableRow>
@@ -633,6 +651,24 @@ export function BillingPos({
                                 {round2(((line.lineDiscount + line.billDiscountAmount) / line.lineSubtotal) * 100)}% total
                               </p>
                             )}
+                          </TableCell>
+                          <TableCell>
+                            <Select
+                              items={gstTypeItems}
+                              value={l.gstType}
+                              onValueChange={(v) => updateLine(l.productId, { gstType: (v as (typeof GST_TYPES)[number]) ?? "cgst_sgst" })}
+                            >
+                              <SelectTrigger className="w-full">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {GST_TYPES.map((t) => (
+                                  <SelectItem key={t} value={t}>
+                                    {GST_TYPE_SHORT_LABELS[t]}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
                           </TableCell>
                           <TableCell className="text-right font-medium">
                             {money(line.lineTotal)}
@@ -864,6 +900,24 @@ export function BillingPos({
                   <span className="text-muted-foreground">Tax</span>
                   <span>{money(totals.taxAmount)}</span>
                 </div>
+                {totals.igstAmount > 0 && (
+                  <div className="flex justify-between text-xs text-muted-foreground">
+                    <span className="pl-3">IGST</span>
+                    <span>{money(totals.igstAmount)}</span>
+                  </div>
+                )}
+                {totals.cgstSgstAmount > 0 && (
+                  <>
+                    <div className="flex justify-between text-xs text-muted-foreground">
+                      <span className="pl-3">CGST</span>
+                      <span>{money(totals.cgstSgstAmount / 2)}</span>
+                    </div>
+                    <div className="flex justify-between text-xs text-muted-foreground">
+                      <span className="pl-3">SGST</span>
+                      <span>{money(totals.cgstSgstAmount / 2)}</span>
+                    </div>
+                  </>
+                )}
                 <div className="flex justify-between border-t border-border pt-1.5 text-base font-semibold">
                   <span>Total</span>
                   <span>{money(totals.totalAmount)}</span>

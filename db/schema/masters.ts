@@ -2,7 +2,7 @@ import { pgTable, text, timestamp, numeric, boolean, unique, pgEnum } from "driz
 import { businesses } from "./tenancy";
 import { warehouses } from "./org";
 
-/** Indian GST split: the whole rate as IGST (inter-state), or halved into CGST + SGST (intra-state). Shared by products (a default) and purchase items (decided per line). */
+/** Indian GST split: the whole rate as IGST (inter-state), or halved into CGST + SGST (intra-state). Lives on the product master (a rate like 18% can be either, depending on the transaction) and is snapshotted per line on purchases and sales. */
 export const gstTypeEnum = pgEnum("gst_type", ["igst", "cgst_sgst"]);
 
 /**
@@ -130,8 +130,6 @@ export const taxRates = pgTable(
     name: text("name").notNull(),
     ratePercent: numeric("rate_percent", { precision: 5, scale: 2 }).notNull(),
     cessPercent: numeric("cess_percent", { precision: 5, scale: 2 }).notNull().default("0"),
-    /** Every rate is inevitably one or the other — only the percent is custom per rate. */
-    gstType: gstTypeEnum("gst_type").notNull().default("cgst_sgst"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [unique().on(table.businessId, table.name)]

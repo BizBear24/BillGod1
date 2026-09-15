@@ -2,7 +2,7 @@ import { pgTable, text, timestamp, numeric, integer, pgEnum, unique, index, type
 import { businesses } from "./tenancy";
 import { branches, counters, warehouses } from "./org";
 import { customers } from "./parties";
-import { salespersons } from "./masters";
+import { salespersons, gstTypeEnum } from "./masters";
 import { products } from "./products";
 import { users } from "./auth";
 
@@ -100,6 +100,8 @@ export const saleItems = pgTable("sale_items", {
    */
   billDiscountAmount: numeric("bill_discount_amount", { precision: 12, scale: 2 }).notNull().default("0"),
   taxRatePercent: numeric("tax_rate_percent", { precision: 5, scale: 2 }).notNull().default("0"),
+  /** Whether this line's tax prints as one IGST amount or split CGST+SGST — snapshotted from the product at sale time, per line. */
+  gstType: gstTypeEnum("gst_type").notNull().default("cgst_sgst"),
   taxAmount: numeric("tax_amount", { precision: 12, scale: 2 }).notNull().default("0"),
   lineTotal: numeric("line_total", { precision: 14, scale: 2 }).notNull(),
 

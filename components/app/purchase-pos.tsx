@@ -14,6 +14,8 @@ import {
   GST_TYPES,
   GST_TYPE_LABELS,
 } from "@/lib/validation/purchases";
+import { GST_TYPE_SHORT_LABELS } from "@/lib/validation/common";
+import { sumGstSplits } from "@/lib/gst";
 import { PurchaseDocument } from "@/components/app/purchase-document";
 import type { InvoiceCompany } from "@/components/app/invoice-document";
 import { getPrintService, type PrintFormat } from "@/lib/print";
@@ -37,11 +39,12 @@ type Product = {
   barcode: string | null;
   purchasePrice: string;
   taxRateId: string | null;
+  /** IGST vs CGST+SGST for this product — carries onto a new cart line, still overridable per line. */
+  gstType: (typeof GST_TYPES)[number];
   trackSerial: boolean;
 };
 type Supplier = { id: string; name: string; phone: string | null };
-/** A rate's GST type is inevitably one of the two — only its percent is custom — and carries onto a new cart line via the product's chosen rate, still overridable per line. */
-type TaxRate = { id: string; ratePercent: string; gstType: (typeof GST_TYPES)[number] };
+type TaxRate = { id: string; ratePercent: string };
 type Warehouse = { id: string; name: string; label: string };
 type HeldPurchase = { id: string; docNumber: string; docType: string; totalAmount: string; updatedAt: Date };
 type ReturnablePurchase = { id: string; docNumber: string; totalAmount: string; supplierId: string; createdAt: Date };
@@ -77,11 +80,6 @@ type RecentPurchase = {
 
 const money = (n: number) => `₹${n.toFixed(2)}`;
 const round2 = (n: number) => Math.round(n * 100) / 100;
-/** Short form of GST_TYPE_LABELS for the narrow per-line column. */
-const GST_TYPE_SHORT_LABELS: Record<(typeof GST_TYPES)[number], string> = {
-  cgst_sgst: "CGST+SGST",
-  igst: "IGST",
-};
 
 export function PurchasePos({
   businessId,
@@ -128,7 +126,6 @@ export function PurchasePos({
   const [justCompleted, setJustCompleted] = React.useState<{ id: string; docNumber: string; docType: string } | null>(null);
 
   const taxRateById = React.useMemo(() => Object.fromEntries(taxRates.map((t) => [t.id, parseFloat(t.ratePercent)])), [taxRates]);
-  const taxRateGstTypeById = React.useMemo(() => Object.fromEntries(taxRates.map((t) => [t.id, t.gstType])), [taxRates]);
   const productById = React.useMemo(() => Object.fromEntries(products.map((p) => [p.id, p])), [products]);
   // A purchase order commits nothing, so it never asks for serials; a receipt
   // and a return both move real units and do.
@@ -171,7 +168,7 @@ export function PurchasePos({
           unitCost: parseFloat(p.purchasePrice) || 0,
           discountPercent: 0,
           taxRatePercent: p.taxRateId ? taxRateById[p.taxRateId] ?? 0 : 0,
-          gstType: p.taxRateId ? taxRateGstTypeById[p.taxRateId] ?? "cgst_sgst" : "cgst_sgst",
+          gstType: p.gstType,
           batchNumber: "",
           expiryDate: "",
           serials: [],
@@ -203,10 +200,7 @@ export function PurchasePos({
     let subtotal = 0;
     let discountAmount = 0;
     let taxAmount = 0;
-    // Each line picks its own GST type, so the bill can mix in-state and
-    // out-of-state receipts — IGST and CGST/SGST are totalled separately.
-    let igstAmount = 0;
-    let cgstSgstAmount = 0;
+    const lineTaxes: { taxAmount: number; gstType: (typeof GST_TYPES)[number] }[] = [];
     for (const l of cart) {
       const lineSubtotal = l.quantity * l.unitCost;
       const lineDiscount = lineSubtotal * (l.discountPercent / 100);
@@ -215,9 +209,12 @@ export function PurchasePos({
       subtotal += lineSubtotal;
       discountAmount += lineDiscount;
       taxAmount += lineTax;
-      if (l.gstType === "igst") igstAmount += lineTax;
-      else cgstSgstAmount += lineTax;
+      lineTaxes.push({ taxAmount: lineTax, gstType: l.gstType });
     }
+    // Each line picks its own GST type, so the bill can mix in-state and
+    // out-of-state receipts — IGST and CGST/SGST are totalled separately.
+    const { igst: igstAmount, cgst, sgst } = sumGstSplits(lineTaxes);
+    const cgstSgstAmount = cgst + sgst;
     const totalAmount = subtotal - discountAmount + taxAmount;
     const amountPaid = payments.reduce((s, p) => s + (p.amount || 0), 0);
     return { subtotal, discountAmount, taxAmount, igstAmount, cgstSgstAmount, totalAmount, amountPaid, due: totalAmount - amountPaid };

@@ -4,6 +4,8 @@ import * as React from "react";
 import { BarcodeSvg } from "@/components/app/barcode-svg";
 import { INVOICE_COLUMNS, INVOICE_PAPERS, amountInWords, type InvoiceColumnKey, type InvoiceDesign } from "@/lib/print/templates";
 import { formatDateTime } from "@/lib/utils";
+import { sumGstSplits } from "@/lib/gst";
+import { GST_TYPE_SHORT_LABELS } from "@/lib/validation/common";
 
 /**
  * Renders a bill from an invoice design.
@@ -37,6 +39,8 @@ export type InvoiceLine = {
   discountPercent: string;
   billDiscountAmount: string;
   taxRatePercent: string;
+  /** Decided per item, not per document — a bill can mix in-state and out-of-state lines. */
+  gstType: "igst" | "cgst_sgst";
   taxAmount: string;
   lineTotal: string;
 };
@@ -103,6 +107,8 @@ function cellValue(key: InvoiceColumnKey, line: InvoiceLine, index: number): str
       return num(line.billDiscountAmount) ? money(line.billDiscountAmount) : "";
     case "taxRatePercent":
       return num(line.taxRatePercent) ? `${num(line.taxRatePercent)}%` : "";
+    case "gstType":
+      return num(line.taxAmount) ? GST_TYPE_SHORT_LABELS[line.gstType] : "";
     case "taxAmount":
       return money(line.taxAmount);
     case "lineTotal":
@@ -138,6 +144,10 @@ export function InvoiceDocument({
   const alignOf = (key: InvoiceColumnKey) => INVOICE_COLUMNS.find((c) => c.key === key)?.align ?? "left";
 
   const balance = num(sale.totalAmount) - num(sale.amountPaid) - num(sale.redeemedValue);
+  // Each line picks its own GST type, so the printed total splits IGST and
+  // CGST+SGST separately rather than assuming the whole bill is one or the other.
+  const { igst: igstAmount, cgst, sgst } = sumGstSplits(lines.map((l) => ({ taxAmount: num(l.taxAmount), gstType: l.gstType })));
+  const cgstSgstAmount = cgst + sgst;
 
   return (
     <div
@@ -298,7 +308,13 @@ export function InvoiceDocument({
             base={base}
           />
         )}
-        {design.showTax && num(sale.taxAmount) > 0 && <TotalRow label="Tax" value={money(sale.taxAmount)} base={base} />}
+        {design.showTax && igstAmount > 0 && <TotalRow label="IGST" value={money(igstAmount)} base={base} />}
+        {design.showTax && cgstSgstAmount > 0 && (
+          <>
+            <TotalRow label="CGST" value={money(cgstSgstAmount / 2)} base={base} />
+            <TotalRow label="SGST" value={money(cgstSgstAmount / 2)} base={base} />
+          </>
+        )}
         {design.showRoundOff && num(sale.roundOff) !== 0 && <TotalRow label="Round off" value={money(sale.roundOff)} base={base} />}
         <TotalRow label="Total" value={money(sale.totalAmount)} base={base} strong accent={design.accentColor} />
         {design.showLoyalty && num(sale.redeemedValue) > 0 && (
@@ -406,6 +422,7 @@ export const SAMPLE_INVOICE: { sale: InvoiceSale; lines: InvoiceLine[] } = {
       discountPercent: "0",
       billDiscountAmount: "100.00",
       taxRatePercent: "5",
+      gstType: "cgst_sgst",
       taxAmount: "95.00",
       lineTotal: "1995.00",
     },
@@ -419,6 +436,7 @@ export const SAMPLE_INVOICE: { sale: InvoiceSale; lines: InvoiceLine[] } = {
       discountPercent: "0",
       billDiscountAmount: "70.00",
       taxRatePercent: "5",
+      gstType: "cgst_sgst",
       taxAmount: "66.50",
       lineTotal: "1396.50",
     },

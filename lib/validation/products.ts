@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { optionalId, optionalNumber, optionalText } from "./common";
+import { optionalId, optionalNumber, optionalText, GST_TYPES } from "./common";
 
 export const productSchema = z.object({
   itemCode: z.string().trim().min(1, "Enter an item code"),
@@ -15,6 +15,8 @@ export const productSchema = z.object({
   colorId: optionalId,
   hsnId: optionalId,
   taxRateId: optionalId,
+  /** IGST vs CGST+SGST for this product's tax rate — a rate can be either depending on the transaction, so it's picked here, not on the Tax Rate master. */
+  gstType: z.enum(GST_TYPES).default("cgst_sgst"),
 
   barcode: optionalText,
   purchasePrice: optionalNumber(z.coerce.number().min(0)),

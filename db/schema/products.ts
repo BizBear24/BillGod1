@@ -1,6 +1,6 @@
 import { pgTable, text, timestamp, numeric, integer, boolean, unique } from "drizzle-orm/pg-core";
 import { businesses } from "./tenancy";
-import { categories, sections, subsections, brands, units, sizes, colors, hsnCodes, taxRates } from "./masters";
+import { categories, sections, subsections, brands, units, sizes, colors, hsnCodes, taxRates, gstTypeEnum } from "./masters";
 import { users } from "./auth";
 
 /**
@@ -40,6 +40,8 @@ export const products = pgTable(
     colorId: text("color_id").references(() => colors.id),
     hsnId: text("hsn_id").references(() => hsnCodes.id),
     taxRateId: text("tax_rate_id").references(() => taxRates.id),
+    /** IGST vs CGST+SGST for this product's tax rate — a rate like 18% can be either, depending on the transaction, so this (not the tax rate) is where the choice lives. */
+    gstType: gstTypeEnum("gst_type").notNull().default("cgst_sgst"),
 
     barcode: text("barcode"),
     purchasePrice: numeric("purchase_price", { precision: 12, scale: 2 }).notNull().default("0"),

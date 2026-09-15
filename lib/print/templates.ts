@@ -161,6 +161,7 @@ export const INVOICE_COLUMNS = [
   { key: "discountPercent", label: "Disc %", align: "right" as const },
   { key: "billDiscountAmount", label: "Bill Disc", align: "right" as const },
   { key: "taxRatePercent", label: "GST %", align: "right" as const },
+  { key: "gstType", label: "GST Type", align: "left" as const },
   { key: "taxAmount", label: "GST Amt", align: "right" as const },
   { key: "lineTotal", label: "Amount", align: "right" as const },
 ] as const;
@@ -225,6 +226,7 @@ const DEFAULT_WIDTHS: Partial<Record<InvoiceColumnKey, number>> = {
   discountPercent: 8,
   billDiscountAmount: 10,
   taxRatePercent: 8,
+  gstType: 12,
   taxAmount: 10,
   lineTotal: 14,
 };

@@ -1,4 +1,7 @@
 import { z } from "zod";
+import { GST_TYPES } from "./common";
+
+export { GST_TYPES, GST_TYPE_LABELS } from "./common";
 
 export const SALE_DOC_TYPES = ["sale", "sale_return", "quotation", "estimate", "sale_order", "challan"] as const;
 export const SALE_DOC_TYPE_LABELS: Record<(typeof SALE_DOC_TYPES)[number], string> = {
@@ -26,6 +29,8 @@ export const saleItemSchema = z.object({
   unitPrice: z.coerce.number().min(0),
   discountPercent: z.coerce.number().min(0).max(100).optional(),
   taxRatePercent: z.coerce.number().min(0).max(100).optional(),
+  /** Decided per item, not per document — a bill can mix in-state and out-of-state lines. */
+  gstType: z.enum(GST_TYPES).default("cgst_sgst"),
   /** Free text for serial-tracked products; the server parses and verifies it. */
   serialNumbers: z.string().trim().optional(),
 });
