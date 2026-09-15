@@ -101,7 +101,7 @@ function toDbValues(businessId: string, data: ReturnType<typeof productSchema.pa
   };
 }
 
-export async function createProduct(input: unknown): Promise<ActionResult> {
+export async function createProduct(input: unknown): Promise<ActionResult & { id?: string }> {
   const gate = await requireGate(PERMISSIONS.PRODUCTS_MANAGE);
   if (!gate.ok) return gate;
   const parsed = productSchema.safeParse(input);
@@ -111,7 +111,9 @@ export async function createProduct(input: unknown): Promise<ActionResult> {
   try {
     const [row] = await db.insert(products).values(toDbValues(gate.membership.businessId, parsed.data)).returning();
     await logAudit({ businessId: gate.membership.businessId, userId: gate.sessionUser.userId, action: "product.created", entityType: "product", entityId: row.id, after: parsed.data });
-    return { ok: true };
+    // The Add Product form's photo widget needs this to attach a picture right
+    // after creation, before the id would otherwise be known client-side.
+    return { ok: true, id: row.id };
   } catch (err) {
     if (err instanceof Error && err.message.includes("unique")) {
       return { ok: false, error: "A product with this item code already exists." };

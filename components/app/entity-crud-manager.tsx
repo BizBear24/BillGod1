@@ -6,7 +6,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
 import type { ZodTypeAny } from "zod";
-import { Plus, Pencil, Trash2, Tag, Award, Ruler, Palette, Warehouse, UserSquare2, Stethoscope, Receipt, Percent, Package, Users, Truck, BookOpen, Ticket } from "lucide-react";
+import { Plus, Pencil, Trash2, Tag, Award, Ruler, Palette, Warehouse, UserSquare2, Stethoscope, Receipt, Percent, Package, Users, Truck, BookOpen, Ticket, Camera, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -22,6 +22,8 @@ import { accountSchema } from "@/lib/validation/accounting";
 import { loyaltyTierSchema, couponSchema } from "@/lib/validation/engagement";
 import { NONE } from "@/lib/validation/common";
 import { createMasterValue } from "@/app/actions/masters";
+import { getProductImage, setProductImage } from "@/app/actions/products";
+import { resizeImageFile } from "@/lib/images/resize-client";
 import { INLINE_MASTER_LABELS, type InlineMasterKind } from "@/lib/masters/inline";
 import { ProductPhotoIcon } from "@/components/app/product-photo-icon";
 
@@ -91,7 +93,7 @@ export type CrudColumn<T> = {
   nameKey?: Extract<keyof T, string>;
 };
 
-type ActionResult = { ok: true } | { ok: false; error: string };
+type ActionResult = { ok: true; id?: string } | { ok: false; error: string };
 
 export function EntityCrudManager<T extends Record<string, unknown> & { id: string }>({
   title,
@@ -226,6 +228,7 @@ export function EntityCrudManager<T extends Record<string, unknown> & { id: stri
               per item — it otherwise only applies them once, at first mount. */}
           <EntityForm
             key={editing?.id ?? "new"}
+            kind={kind}
             itemLabel={itemLabel ?? title.replace(/s$/, "")}
             fields={fields}
             schema={schema}
@@ -286,6 +289,7 @@ function renderCell<T extends Record<string, unknown> & { id: string }>(item: T,
 }
 
 function EntityForm({
+  kind,
   itemLabel,
   fields,
   schema,
@@ -295,6 +299,7 @@ function EntityForm({
   updateAction,
   onSuccess,
 }: {
+  kind: EntityKind;
   itemLabel: string;
   fields: CrudField[];
   schema: ZodTypeAny;
@@ -311,11 +316,65 @@ function EntityForm({
     defaultValues,
   });
 
+  // Photo lives in its own table (see ProductPhotoManager), keyed by product
+  // id — which a brand-new product doesn't have until createAction returns
+  // one. So a picked file is only held here and actually saved once the
+  // product itself has saved, on whichever id that turned out to be.
+  const isProduct = kind === "product";
+  const [photoPreview, setPhotoPreview] = React.useState<string | null>(null);
+  const [pendingPhoto, setPendingPhoto] = React.useState<string | null | undefined>(undefined);
+  const [photoLoading, setPhotoLoading] = React.useState(isProduct && !!editingId);
+  const [photoSaving, setPhotoSaving] = React.useState(false);
+  const photoInputRef = React.useRef<HTMLInputElement>(null);
+
+  React.useEffect(() => {
+    if (!isProduct || !editingId) return;
+    let cancelled = false;
+    setPhotoLoading(true);
+    getProductImage(editingId)
+      .then((url) => {
+        if (!cancelled) setPhotoPreview(url);
+      })
+      .catch(() => {
+        if (!cancelled) toast.error("Could not load this product's photo.");
+      })
+      .finally(() => {
+        if (!cancelled) setPhotoLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // Runs once for this dialog instance — the form remounts (via its `key`) whenever a different item opens.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function handlePhotoFile(file: File) {
+    try {
+      const dataUrl = await resizeImageFile(file);
+      setPhotoPreview(dataUrl);
+      setPendingPhoto(dataUrl);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not process that image.");
+    }
+  }
+
+  function removePhoto() {
+    setPhotoPreview(null);
+    setPendingPhoto(null);
+  }
+
   async function onSubmit(values: Record<string, unknown>) {
     const result = editingId ? await updateAction(editingId, values) : await createAction(values);
     if (!result.ok) {
       form.setError("root", { message: result.error });
       return;
+    }
+    const productId = editingId ?? result.id;
+    if (isProduct && productId && pendingPhoto !== undefined) {
+      setPhotoSaving(true);
+      const photoResult = await setProductImage(productId, pendingPhoto);
+      setPhotoSaving(false);
+      if (!photoResult.ok) toast.error(`Saved, but the photo failed: ${photoResult.error}`);
     }
     toast.success(editingId ? "Saved" : "Created");
     form.reset(defaultValues);
@@ -331,6 +390,44 @@ function EntityForm({
       </DialogHeader>
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+          {isProduct && (
+            <div className="flex items-center gap-3 rounded-lg border border-border p-3">
+              <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-md bg-muted/40">
+                {photoLoading ? (
+                  <Camera className="h-5 w-5 text-muted-foreground" />
+                ) : photoPreview ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={photoPreview} alt="" className="h-full w-full object-contain" />
+                ) : (
+                  <Camera className="h-5 w-5 text-muted-foreground" />
+                )}
+              </div>
+              <div className="flex-1 space-y-1">
+                <p className="text-sm font-medium">Photo</p>
+                <p className="text-xs text-muted-foreground">Shown in Billing, Purchase, and the Catalogue.</p>
+              </div>
+              <input
+                ref={photoInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  e.target.value = "";
+                  if (file) void handlePhotoFile(file);
+                }}
+              />
+              <Button type="button" size="sm" variant="secondary" disabled={photoSaving} onClick={() => photoInputRef.current?.click()}>
+                <Upload className="h-3.5 w-3.5" />
+                {photoPreview ? "Replace" : "Upload"}
+              </Button>
+              {photoPreview && (
+                <Button type="button" size="sm" variant="ghost" disabled={photoSaving} onClick={removePhoto}>
+                  <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                </Button>
+              )}
+            </div>
+          )}
           {/* Two columns so a form with many fields (Products has 22) reads as a
               short, wide grid instead of one long single-column scroll — a toggle
               still spans the full width since a checkbox+label pair looks stranded
