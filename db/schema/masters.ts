@@ -1,6 +1,9 @@
-import { pgTable, text, timestamp, numeric, boolean, unique } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, numeric, boolean, unique, pgEnum } from "drizzle-orm/pg-core";
 import { businesses } from "./tenancy";
 import { warehouses } from "./org";
+
+/** Indian GST split: the whole rate as IGST (inter-state), or halved into CGST + SGST (intra-state). Shared by products (a default) and purchase items (decided per line). */
+export const gstTypeEnum = pgEnum("gst_type", ["igst", "cgst_sgst"]);
 
 /**
  * Simple lookup masters (spec §1/§20). Each is scoped to a business and

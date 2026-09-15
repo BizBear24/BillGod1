@@ -1,0 +1,1 @@
+ALTER TABLE "products" ADD COLUMN "gst_type" "gst_type" DEFAULT 'cgst_sgst' NOT NULL;

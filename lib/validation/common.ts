@@ -17,6 +17,13 @@ import { z } from "zod";
 /** The `"none"` item a Select shows for "no value chosen". */
 export const NONE = "none";
 
+/** Indian GST split: the whole rate as IGST (inter-state), or halved into CGST + SGST (intra-state). */
+export const GST_TYPES = ["cgst_sgst", "igst"] as const;
+export const GST_TYPE_LABELS: Record<(typeof GST_TYPES)[number], string> = {
+  cgst_sgst: "CGST + SGST (intra-state)",
+  igst: "IGST (inter-state)",
+};
+
 const isBlank = (value: unknown) =>
   value === null || value === undefined || (typeof value === "string" && value.trim() === "");
 

@@ -37,6 +37,8 @@ type Product = {
   barcode: string | null;
   purchasePrice: string;
   taxRateId: string | null;
+  /** Default GST split carried onto a new cart line — still overridable per line. */
+  gstType: (typeof GST_TYPES)[number];
   trackSerial: boolean;
 };
 type Supplier = { id: string; name: string; phone: string | null };
@@ -169,7 +171,7 @@ export function PurchasePos({
           unitCost: parseFloat(p.purchasePrice) || 0,
           discountPercent: 0,
           taxRatePercent: p.taxRateId ? taxRateById[p.taxRateId] ?? 0 : 0,
-          gstType: "cgst_sgst",
+          gstType: p.gstType,
           batchNumber: "",
           expiryDate: "",
           serials: [],

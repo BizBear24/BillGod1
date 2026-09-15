@@ -3,7 +3,10 @@ import { businesses } from "./tenancy";
 import { branches, warehouses } from "./org";
 import { suppliers } from "./parties";
 import { products } from "./products";
+import { gstTypeEnum } from "./masters";
 import { users } from "./auth";
+
+export { gstTypeEnum };
 
 /**
  * Purchase-side documents — spec Phase 4. Mirrors the sales module's shape
@@ -14,8 +17,6 @@ import { users } from "./auth";
 export const purchaseDocTypeEnum = pgEnum("purchase_doc_type", ["purchase_order", "purchase", "purchase_return"]);
 export const purchaseStatusEnum = pgEnum("purchase_status", ["draft", "completed", "cancelled"]);
 export const purchasePaymentMethodEnum = pgEnum("purchase_payment_method", ["cash", "upi", "card", "credit"]);
-/** Indian GST split: the whole rate as IGST (inter-state), or halved into CGST + SGST (intra-state). */
-export const gstTypeEnum = pgEnum("gst_type", ["igst", "cgst_sgst"]);
 
 export const purchases = pgTable(
   "purchases",

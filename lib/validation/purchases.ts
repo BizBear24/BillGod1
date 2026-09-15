@@ -1,4 +1,7 @@
 import { z } from "zod";
+import { GST_TYPES } from "./common";
+
+export { GST_TYPES, GST_TYPE_LABELS } from "./common";
 
 export const PURCHASE_DOC_TYPES = ["purchase_order", "purchase", "purchase_return"] as const;
 export const PURCHASE_DOC_TYPE_LABELS: Record<(typeof PURCHASE_DOC_TYPES)[number], string> = {
@@ -13,12 +16,6 @@ export const PURCHASE_PAYMENT_METHOD_LABELS: Record<(typeof PURCHASE_PAYMENT_MET
   upi: "UPI",
   card: "Card",
   credit: "Credit (on account)",
-};
-
-export const GST_TYPES = ["cgst_sgst", "igst"] as const;
-export const GST_TYPE_LABELS: Record<(typeof GST_TYPES)[number], string> = {
-  cgst_sgst: "CGST + SGST (intra-state)",
-  igst: "IGST (inter-state)",
 };
 
 export const purchaseItemSchema = z.object({
