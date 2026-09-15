@@ -29,6 +29,8 @@ export const purchaseItemSchema = z.object({
   unitCost: z.coerce.number().min(0),
   discountPercent: z.coerce.number().min(0).max(100).optional(),
   taxRatePercent: z.coerce.number().min(0).max(100).optional(),
+  /** Decided per item, not per document — a receipt can mix in-state and out-of-state lines. */
+  gstType: z.enum(GST_TYPES).default("cgst_sgst"),
   batchNumber: z.string().trim().optional(),
   expiryDate: z.string().trim().optional(),
   serialNumbers: z.string().trim().optional(),
@@ -52,7 +54,6 @@ export const createPurchaseSchema = z.object({
     .transform((v) => (v && v !== "none" ? v : undefined)),
   supplierId: z.string().min(1, "Select a supplier"),
   supplierInvoiceNumber: z.string().trim().optional(),
-  gstType: z.enum(GST_TYPES).default("cgst_sgst"),
   notes: z.string().trim().optional(),
   items: z.array(purchaseItemSchema).min(1, "Add at least one item"),
   payments: z.array(purchasePaymentSchema).optional(),

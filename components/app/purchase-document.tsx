@@ -27,6 +27,8 @@ export type PurchaseLine = {
   unitCost: string;
   discountPercent: string;
   taxRatePercent: string;
+  /** Decided per item, not per document — a receipt can mix in-state and out-of-state lines. */
+  gstType: "igst" | "cgst_sgst";
   taxAmount: string;
   lineTotal: string;
 };
@@ -43,8 +45,6 @@ export type PurchaseDetail = {
   totalAmount: string;
   amountPaid: string;
   supplierInvoiceNumber: string | null;
-  /** Whether tax prints as one IGST line (inter-state) or split CGST+SGST (intra-state). */
-  gstType: "igst" | "cgst_sgst";
   supplierName: string;
   supplierPhone: string | null;
   supplierGstin: string | null;
@@ -77,6 +77,10 @@ export function PurchaseDocument({
   const narrow = design.paper === "58mm" || design.paper === "80mm" || (design.paper === "custom" && widthMm <= 100);
   const base = (narrow ? 9 : 11) * design.fontScale;
   const balance = num(purchase.totalAmount) - num(purchase.amountPaid);
+  // Each line picks its own GST type, so the printed total splits IGST and
+  // CGST+SGST separately rather than assuming the whole document is one or the other.
+  const igstAmount = lines.filter((l) => l.gstType === "igst").reduce((s, l) => s + num(l.taxAmount), 0);
+  const cgstSgstAmount = lines.filter((l) => l.gstType !== "igst").reduce((s, l) => s + num(l.taxAmount), 0);
 
   return (
     <div
@@ -228,15 +232,12 @@ export function PurchaseDocument({
       <div style={{ marginLeft: "auto", width: narrow ? "100%" : "45%", breakInside: "avoid", pageBreakInside: "avoid" }}>
         {design.showSubtotal && <TotalRow label="Subtotal" value={money(purchase.subtotal)} base={base} />}
         {design.showDiscount && num(purchase.discountAmount) > 0 && <TotalRow label="Discount" value={`-${money(purchase.discountAmount)}`} base={base} />}
-        {design.showTax && num(purchase.taxAmount) > 0 && (
-          purchase.gstType === "igst" ? (
-            <TotalRow label="IGST" value={money(purchase.taxAmount)} base={base} />
-          ) : (
-            <>
-              <TotalRow label="CGST" value={money(num(purchase.taxAmount) / 2)} base={base} />
-              <TotalRow label="SGST" value={money(num(purchase.taxAmount) / 2)} base={base} />
-            </>
-          )
+        {design.showTax && igstAmount > 0 && <TotalRow label="IGST" value={money(igstAmount)} base={base} />}
+        {design.showTax && cgstSgstAmount > 0 && (
+          <>
+            <TotalRow label="CGST" value={money(cgstSgstAmount / 2)} base={base} />
+            <TotalRow label="SGST" value={money(cgstSgstAmount / 2)} base={base} />
+          </>
         )}
         {design.showRoundOff && num(purchase.roundOff) !== 0 && <TotalRow label="Round off" value={money(purchase.roundOff)} base={base} />}
         <TotalRow label="Total" value={money(purchase.totalAmount)} base={base} strong accent={design.accentColor} />

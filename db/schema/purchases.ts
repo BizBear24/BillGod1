@@ -39,9 +39,6 @@ export const purchases = pgTable(
     supplierId: text("supplier_id").notNull().references(() => suppliers.id),
     supplierInvoiceNumber: text("supplier_invoice_number"),
 
-    /** Whether this purchase's tax prints as one IGST line or split CGST+SGST. */
-    gstType: gstTypeEnum("gst_type").notNull().default("cgst_sgst"),
-
     subtotal: numeric("subtotal", { precision: 14, scale: 2 }).notNull().default("0"),
     discountAmount: numeric("discount_amount", { precision: 14, scale: 2 }).notNull().default("0"),
     taxAmount: numeric("tax_amount", { precision: 14, scale: 2 }).notNull().default("0"),
@@ -76,6 +73,8 @@ export const purchaseItems = pgTable("purchase_items", {
   unitCost: numeric("unit_cost", { precision: 12, scale: 2 }).notNull(),
   discountPercent: numeric("discount_percent", { precision: 5, scale: 2 }).notNull().default("0"),
   taxRatePercent: numeric("tax_rate_percent", { precision: 5, scale: 2 }).notNull().default("0"),
+  /** Whether this line's tax prints as one IGST amount or split CGST+SGST — decided per item, not per document. */
+  gstType: gstTypeEnum("gst_type").notNull().default("cgst_sgst"),
   taxAmount: numeric("tax_amount", { precision: 12, scale: 2 }).notNull().default("0"),
   lineTotal: numeric("line_total", { precision: 14, scale: 2 }).notNull(),
 

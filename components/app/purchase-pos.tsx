@@ -53,6 +53,8 @@ type CartLine = {
   unitCost: number;
   discountPercent: number;
   taxRatePercent: number;
+  /** Decided per item, not per document — a receipt can mix in-state and out-of-state lines. */
+  gstType: (typeof GST_TYPES)[number];
   batchNumber: string;
   expiryDate: string;
   /** One per unit, for products flagged to track serials. */
@@ -74,6 +76,11 @@ type RecentPurchase = {
 
 const money = (n: number) => `₹${n.toFixed(2)}`;
 const round2 = (n: number) => Math.round(n * 100) / 100;
+/** Short form of GST_TYPE_LABELS for the narrow per-line column. */
+const GST_TYPE_SHORT_LABELS: Record<(typeof GST_TYPES)[number], string> = {
+  cgst_sgst: "CGST+SGST",
+  igst: "IGST",
+};
 
 export function PurchasePos({
   businessId,
@@ -111,8 +118,6 @@ export function PurchasePos({
   const [supplierId, setSupplierId] = React.useState(suppliers[0]?.id ?? "");
   const [warehouseId, setWarehouseId] = useActiveWarehouse(businessId, warehouses);
   const [supplierInvoiceNumber, setSupplierInvoiceNumber] = React.useState("");
-  /** Whether this purchase's GST is one IGST line (inter-state) or split CGST+SGST (intra-state). */
-  const [gstType, setGstType] = React.useState<(typeof GST_TYPES)[number]>("cgst_sgst");
   const [originalPurchaseId, setOriginalPurchaseId] = React.useState("none");
   const [payments, setPayments] = React.useState<PaymentRow[]>([{ method: "cash", amount: 0 }]);
   const [editingId, setEditingId] = React.useState<string | null>(null);
@@ -164,6 +169,7 @@ export function PurchasePos({
           unitCost: parseFloat(p.purchasePrice) || 0,
           discountPercent: 0,
           taxRatePercent: p.taxRateId ? taxRateById[p.taxRateId] ?? 0 : 0,
+          gstType: "cgst_sgst",
           batchNumber: "",
           expiryDate: "",
           serials: [],
@@ -195,6 +201,10 @@ export function PurchasePos({
     let subtotal = 0;
     let discountAmount = 0;
     let taxAmount = 0;
+    // Each line picks its own GST type, so the bill can mix in-state and
+    // out-of-state receipts — IGST and CGST/SGST are totalled separately.
+    let igstAmount = 0;
+    let cgstSgstAmount = 0;
     for (const l of cart) {
       const lineSubtotal = l.quantity * l.unitCost;
       const lineDiscount = lineSubtotal * (l.discountPercent / 100);
@@ -203,10 +213,12 @@ export function PurchasePos({
       subtotal += lineSubtotal;
       discountAmount += lineDiscount;
       taxAmount += lineTax;
+      if (l.gstType === "igst") igstAmount += lineTax;
+      else cgstSgstAmount += lineTax;
     }
     const totalAmount = subtotal - discountAmount + taxAmount;
     const amountPaid = payments.reduce((s, p) => s + (p.amount || 0), 0);
-    return { subtotal, discountAmount, taxAmount, totalAmount, amountPaid, due: totalAmount - amountPaid };
+    return { subtotal, discountAmount, taxAmount, igstAmount, cgstSgstAmount, totalAmount, amountPaid, due: totalAmount - amountPaid };
   }, [cart, payments]);
 
   function resetForm() {
@@ -215,7 +227,6 @@ export function PurchasePos({
     setSupplierId(suppliers[0]?.id ?? "");
     setWarehouseId(warehouses[0]?.id ?? "");
     setSupplierInvoiceNumber("");
-    setGstType("cgst_sgst");
     setOriginalPurchaseId("none");
     setPayments([{ method: "cash", amount: 0 }]);
     setEditingId(null);
@@ -250,7 +261,6 @@ export function PurchasePos({
       originalPurchaseId: docType === "purchase_return" ? originalPurchaseId : "none",
       supplierId,
       supplierInvoiceNumber,
-      gstType,
       items: cart.map((l) => ({
         productId: l.productId,
         itemCode: l.itemCode,
@@ -259,6 +269,7 @@ export function PurchasePos({
         unitCost: l.unitCost,
         discountPercent: l.discountPercent,
         taxRatePercent: l.taxRatePercent,
+        gstType: l.gstType,
         batchNumber: l.batchNumber,
         expiryDate: l.expiryDate,
         serialNumbers: l.serials.join(","),
@@ -292,7 +303,6 @@ export function PurchasePos({
     setSupplierId(data.purchase.supplierId);
     setWarehouseId(data.purchase.warehouseId ?? warehouses[0]?.id ?? "");
     setSupplierInvoiceNumber(data.purchase.supplierInvoiceNumber ?? "");
-    setGstType(data.purchase.gstType);
     setOriginalPurchaseId(data.purchase.originalPurchaseId ?? "none");
     setCart(
       validItems.map((i) => ({
@@ -303,6 +313,7 @@ export function PurchasePos({
         unitCost: parseFloat(i.unitCost),
         discountPercent: parseFloat(i.discountPercent),
         taxRatePercent: parseFloat(i.taxRatePercent),
+        gstType: i.gstType,
         batchNumber: i.batchNumber ?? "",
         expiryDate: i.expiryDate ?? "",
         serials: i.serialNumbers ? i.serialNumbers.split(",").map((v) => v.trim().toUpperCase()).filter(Boolean) : [],
@@ -530,18 +541,6 @@ export function PurchasePos({
                   onChange={(e) => setSupplierInvoiceNumber(e.target.value)}
                   placeholder="Supplier invoice number (optional)"
                 />
-                <Select items={gstTypeItems} value={gstType} onValueChange={(v) => setGstType((v as (typeof GST_TYPES)[number]) ?? "cgst_sgst")}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {GST_TYPES.map((t) => (
-                      <SelectItem key={t} value={t}>
-                        {GST_TYPE_LABELS[t]}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
               </CardContent>
             </Card>
 
@@ -555,20 +554,21 @@ export function PurchasePos({
                   <span className="text-muted-foreground">Discount</span>
                   <span>-{money(totals.discountAmount)}</span>
                 </div>
-                {gstType === "igst" ? (
+                {totals.igstAmount > 0 && (
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">IGST</span>
-                    <span>{money(totals.taxAmount)}</span>
+                    <span>{money(totals.igstAmount)}</span>
                   </div>
-                ) : (
+                )}
+                {totals.cgstSgstAmount > 0 && (
                   <>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">CGST</span>
-                      <span>{money(totals.taxAmount / 2)}</span>
+                      <span>{money(totals.cgstSgstAmount / 2)}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">SGST</span>
-                      <span>{money(totals.taxAmount / 2)}</span>
+                      <span>{money(totals.cgstSgstAmount / 2)}</span>
                     </div>
                   </>
                 )}
@@ -657,6 +657,7 @@ export function PurchasePos({
                   <TableHead className="w-24">Cost</TableHead>
                   <TableHead className="w-20">Disc %</TableHead>
                   <TableHead className="w-20">Tax %</TableHead>
+                  <TableHead className="w-32">GST Type</TableHead>
                   <TableHead className="w-28">Batch</TableHead>
                   <TableHead className="w-32">Expiry</TableHead>
                   <TableHead className="text-right">Line Total</TableHead>
@@ -690,6 +691,24 @@ export function PurchasePos({
                       </TableCell>
                       <TableCell>
                         <Input type="number" value={l.taxRatePercent} step="any" onChange={(e) => updateLine(l.productId, { taxRatePercent: parseFloat(e.target.value) || 0 })} />
+                      </TableCell>
+                      <TableCell>
+                        <Select
+                          items={gstTypeItems}
+                          value={l.gstType}
+                          onValueChange={(v) => updateLine(l.productId, { gstType: (v as (typeof GST_TYPES)[number]) ?? "cgst_sgst" })}
+                        >
+                          <SelectTrigger className="w-full">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {GST_TYPES.map((t) => (
+                              <SelectItem key={t} value={t}>
+                                {GST_TYPE_SHORT_LABELS[t]}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       </TableCell>
                       <TableCell>
                         <Input value={l.batchNumber} onChange={(e) => updateLine(l.productId, { batchNumber: e.target.value })} placeholder="—" />
